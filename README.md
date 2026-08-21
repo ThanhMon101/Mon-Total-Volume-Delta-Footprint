@@ -1,0 +1,76 @@
+# Mon - Total Volume & Delta Footprint (ATAS Custom Indicator)
+
+Chỉ báo Custom Footprint cao cấp dành cho nền tảng giao dịch **ATAS Platform**, tối ưu hóa việc phân tích khối lượng vào lệnh theo từng mức giá (Order Flow / Volume Footprint) với các tính năng vượt trội:
+
+---
+
+## 🌟 Tính Năng Nổi Bật
+
+1. **Hiển thị Footprint Kép (Total Volume & Delta):**
+   - Bên trái ô giá: **Total Volume** (tổng khối lượng giao dịch tại mức giá).
+   - Bên phải ô giá: **Delta** (sự chênh lệch Ask Volume - Bid Volume).
+   - Phân cấp màu sắc cảnh báo Volume đột biến (**Cam / Tím**).
+   - Làm nổi bật đường viền mức giá có khối lượng lớn nhất (**POC - Point of Control**).
+
+2. **Nến Mỏng ở Giữa (Middle Candle):**
+   - Hiển thị thân nến (Body) và bóng nến (Wicks) màu sắc trực quan (Bullish / Bearish) ở vạch ngăn giữa hai ô footprint.
+   - Hỗ trợ bật/tắt (`Show Candle in Middle`) hoàn toàn ở mọi mức độ zoom.
+
+3. **Ticks Grouping (Gom Mức Giá):**
+   - Cho phép gom nhiều tick giá vào 1 ô (`Ticks Grouping = 1, 2, 4...`) để biểu đồ tinh gọn và dễ nhìn hơn trên các thị trường biến động mạnh như NQ (Nasdaq), ES (S&P 500).
+
+4. **Right-side Volume & Delta Profile (Histogram Phải):**
+   - Histogram đứng ở mép phải biểu đồ, tổng hợp toàn bộ Volume (độ dài thanh) và Delta (màu sắc Xanh/Đỏ) của các nến đang nhìn thấy trên màn hình.
+
+5. **Bảng Thống Kê 3 Hàng Dưới Đáy (Bottom Stats Table):**
+   - Hàng 1: **Delta** của từng cây nến.
+   - Hàng 2: **CD Day** (Cumulative Delta lũy kế trong ngày, tự động reset theo phiên giao dịch mới).
+   - Hàng 3: **Candle Vol** (Tổng Volume của cây nến).
+   - Thẻ nhãn cố định ở góc phải (`Sticky Labels Card`).
+   - Tự động ẩn chữ thông minh (`Text Auto-Hide`) khi zoom out để chống đè số.
+
+6. **Tối Ưu Zoom Out (`Min Candle Width for Footprint Text`):**
+   - Tự động chuyển sang chế độ nến mỏng khi thu nhỏ biểu đồ (độ rộng nến `< 35px`), chống rối mắt và đè chữ.
+
+7. **Stacked Imbalances (Mất Cân Bằng Khối Lượng):**
+   - Quét mất cân bằng mua/bán theo đường chéo với các bộ lọc `Imbalance Ratio (%)`, `Imbalance Volume`, `Imbalance Range`.
+   - Tùy chọn **`Line till touch`**: Tự động triệt tiêu (biến mất) đường mất cân bằng khi giá quay lại kiểm tra (mitigate).
+
+8. **Delta Divergence (Phân Kỳ Delta - Mũi Tên Tín Hiệu):**
+   - **Bullish Delta Divergence:** Nến tăng (Close > Open) nhưng Delta âm $\rightarrow$ Mũi tên hướng lên `▲` dưới chân nến (Hấp thụ mua).
+   - **Bearish Delta Divergence:** Nến giảm (Close < Open) nhưng Delta dương $\rightarrow$ Mũi tên hướng xuống `▼` trên đầu nến (Hấp thụ bán).
+   - Bộ lọc tỷ lệ % Delta co giãn thông minh: **Major Divergence** (mặc định $\ge 10\%$) và **Minor Divergence** (mặc định $\ge 2.5\%$).
+   - Tùy chỉnh riêng biệt kích thước và màu sắc cho mũi tên Lớn và Nhỏ.
+
+9. **Chế Độ Màu Preset (Dark Mode & Light Mode):**
+   - **DarkMode Preset:** Thiết kế tối ưu cho nền đen/xám tối.
+   - **LightMode Preset:** Tương phản cao, chữ Volume xám than đậm và màu sắc nét cho nền trắng sáng.
+   - **Custom:** Tự do tùy biến từng mã màu.
+
+10. **Hệ Thống Quản Lý Profiles Đa Năng:**
+    - Hỗ trợ lưu trữ riêng biệt 6 cấu hình (`Default`, `Profile 1` $\rightarrow$ `Profile 5`).
+    - Đổi tên trực tiếp tại ô `Profile Rename / Label`, tự động cập nhật ngay trên danh sách chọn `Active Profile` theo thời gian thực.
+    - Lưu trữ vĩnh viễn cấu hình vào file `.cfg` trên máy.
+
+---
+
+## 🛠️ Hướng Dẫn Cài Đặt & Biên Dịch
+
+### Yêu cầu
+* [.NET 8.0 SDK](https://dotnet.microsoft.com/) hoặc [.NET 9.0/10.0 SDK](https://dotnet.microsoft.com/)
+* [ATAS Platform](https://atas.net/) đã cài đặt trên máy tính.
+
+### Biên dịch dự án
+Mở terminal trong thư mục dự án và chạy:
+```bash
+dotnet build -c Release
+```
+
+### Triển khai file DLL vào ATAS
+Sao chép file `bin/Release/net10.0-windows/TotalVolDeltaFootprint.dll` vào thư mục indicators của ATAS:
+```powershell
+Copy-Item -Path "bin\Release\net10.0-windows\TotalVolDeltaFootprint.dll" -Destination "$env:APPDATA\ATAS\Indicators\" -Force
+Copy-Item -Path "bin\Release\net10.0-windows\TotalVolDeltaFootprint.dll" -Destination "$env:APPDATA\ATAS X\Indicators\" -Force
+```
+
+Khởi động lại ATAS, nhấn `Ctrl + I`, tìm kiếm **`Mon - Total Volume & Delta Footprint`** trong nhóm **Custom** và thêm vào biểu đồ.
