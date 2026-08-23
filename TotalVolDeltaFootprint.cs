@@ -17,6 +17,7 @@ namespace ATAS.Indicators.Custom
     public class TotalVolDeltaFootprint : Indicator
     {
         protected virtual void OnPropertyChanged(string propertyName) => RaisePropertyChanged(propertyName);
+
         // ----------------------------------------------------
         // Profile Enum
         // ----------------------------------------------------
@@ -65,7 +66,7 @@ namespace ATAS.Indicators.Custom
         }
 
         // ----------------------------------------------------
-        // Delta Divergence Point Class
+        // Delta Divergence Point Class (with Invalidation State)
         // ----------------------------------------------------
         public class DivergencePoint
         {
@@ -73,6 +74,8 @@ namespace ATAS.Indicators.Custom
             public bool IsBullish { get; set; }
             public decimal Price { get; set; } // Low for bullish, High for bearish
             public bool IsMajor { get; set; } // true = Major, false = Minor
+            public bool IsInvalidated { get; set; }
+            public int InvalidatedBar { get; set; }
         }
 
         // ----------------------------------------------------
@@ -108,6 +111,10 @@ namespace ATAS.Indicators.Custom
         private Color _lastBuyImbalanceColor = Color.Empty;
         private Color _lastSellImbalanceColor = Color.Empty;
         private int _lastImbalanceLineWidth = -1;
+
+        // Cached Invalidation Strike Pen
+        private RenderPen? _invalidationPen;
+        private Color _lastInvalidationColor = Color.Empty;
 
         // Data Caches
         private readonly Dictionary<int, decimal> _cdDayCache = new Dictionary<int, decimal>();
@@ -190,6 +197,12 @@ namespace ATAS.Indicators.Custom
         private Color _minorBearishDivergenceColor = Color.FromArgb(255, 240, 140, 130);
         private int _divergenceDaysLookBack = 20;
         private int _maxDivergenceArrows = 100;
+
+        // Delta Divergence Invalidation Backing Fields
+        private bool _markInvalidatedDivergences = true;
+        private bool _dimInvalidatedArrows = true;
+        private Color _invalidatedStrikeColor = Color.FromArgb(240, 231, 76, 60);
+        private Color _invalidatedArrowColor = Color.FromArgb(100, 150, 150, 150);
 
         // ----------------------------------------------------
         // Profile Name Converter for Dynamic Dropdown Display
@@ -797,7 +810,35 @@ namespace ATAS.Indicators.Custom
             set { if (_minorBearishDivergenceColor != value) { _minorBearishDivergenceColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Days look back", GroupName = "Delta Divergence", Order = 540)]
+        [Display(Name = "Mark Invalidated Signals (X Strike)", GroupName = "Delta Divergence", Order = 537)]
+        public bool MarkInvalidatedDivergences
+        {
+            get => _markInvalidatedDivergences;
+            set { if (_markInvalidatedDivergences != value) { _markInvalidatedDivergences = value; if (!_isApplyingProfile) RecalculateValues(); } }
+        }
+
+        [Display(Name = "Dim Invalidated Arrows", GroupName = "Delta Divergence", Order = 538)]
+        public bool DimInvalidatedArrows
+        {
+            get => _dimInvalidatedArrows;
+            set { if (_dimInvalidatedArrows != value) { _dimInvalidatedArrows = value; if (!_isApplyingProfile) RedrawChart(); } }
+        }
+
+        [Display(Name = "Invalidated Strike Color", GroupName = "Delta Divergence", Order = 539)]
+        public Color InvalidatedStrikeColor
+        {
+            get => _invalidatedStrikeColor;
+            set { if (_invalidatedStrikeColor != value) { _invalidatedStrikeColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
+        }
+
+        [Display(Name = "Invalidated Arrow Color", GroupName = "Delta Divergence", Order = 540)]
+        public Color InvalidatedArrowColor
+        {
+            get => _invalidatedArrowColor;
+            set { if (_invalidatedArrowColor != value) { _invalidatedArrowColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
+        }
+
+        [Display(Name = "Days look back", GroupName = "Delta Divergence", Order = 545)]
         public int DivergenceDaysLookBack
         {
             get => _divergenceDaysLookBack;
@@ -844,6 +885,8 @@ namespace ATAS.Indicators.Custom
             _bearishDivergenceColor = Color.FromArgb(255, 231, 76, 60);
             _minorBullishDivergenceColor = Color.FromArgb(255, 120, 220, 150);
             _minorBearishDivergenceColor = Color.FromArgb(255, 240, 140, 130);
+            _invalidatedStrikeColor = Color.FromArgb(240, 231, 76, 60);
+            _invalidatedArrowColor = Color.FromArgb(100, 150, 150, 150);
         }
 
         public void ApplyLightModeColors()
@@ -876,6 +919,8 @@ namespace ATAS.Indicators.Custom
             _bearishDivergenceColor = Color.FromArgb(255, 215, 38, 56);
             _minorBullishDivergenceColor = Color.FromArgb(255, 80, 180, 120);
             _minorBearishDivergenceColor = Color.FromArgb(255, 235, 100, 110);
+            _invalidatedStrikeColor = Color.FromArgb(240, 215, 38, 56);
+            _invalidatedArrowColor = Color.FromArgb(120, 180, 185, 195);
         }
 
         // ----------------------------------------------------
@@ -975,6 +1020,12 @@ namespace ATAS.Indicators.Custom
                 if (withinLookback)
                 {
                     CalculateDeltaDivergence(bar);
+                }
+
+                // Check and update invalidation states for existing divergence arrows
+                if (MarkInvalidatedDivergences)
+                {
+                    UpdateDivergenceInvalidations(bar);
                 }
             }
         }
@@ -1144,7 +1195,9 @@ namespace ATAS.Indicators.Custom
                     Bar = bar,
                     IsBullish = isBullishCond,
                     Price = isBullishCond ? candle.Low : candle.High,
-                    IsMajor = true
+                    IsMajor = true,
+                    IsInvalidated = false,
+                    InvalidatedBar = -1
                 });
             }
             // 2. Check Minor Divergence (Only if Major did not trigger or is disabled)
@@ -1155,8 +1208,47 @@ namespace ATAS.Indicators.Custom
                     Bar = bar,
                     IsBullish = isBullishCond,
                     Price = isBullishCond ? candle.Low : candle.High,
-                    IsMajor = false
+                    IsMajor = false,
+                    IsInvalidated = false,
+                    InvalidatedBar = -1
                 });
+            }
+        }
+
+        // ----------------------------------------------------
+        // Helper: Update Invalidation state for Divergence Points
+        // ----------------------------------------------------
+        private void UpdateDivergenceInvalidations(int bar)
+        {
+            var candle = GetCandle(bar);
+            if (candle == null) return;
+
+            foreach (var div in _divergences)
+            {
+                if (div.IsInvalidated) continue;
+                if (div.Bar >= bar) continue; // Check bars strictly after the signal bar
+
+                var signalCandle = GetCandle(div.Bar);
+                if (signalCandle == null) continue;
+
+                if (div.IsBullish)
+                {
+                    // Bullish signal (bottom): Invalidated if any subsequent bar breaks below signal candle's Low
+                    if (candle.Low < signalCandle.Low)
+                    {
+                        div.IsInvalidated = true;
+                        div.InvalidatedBar = bar;
+                    }
+                }
+                else
+                {
+                    // Bearish signal (top): Invalidated if any subsequent bar breaks above signal candle's High
+                    if (candle.High > signalCandle.High)
+                    {
+                        div.IsInvalidated = true;
+                        div.InvalidatedBar = bar;
+                    }
+                }
             }
         }
 
@@ -1489,7 +1581,11 @@ namespace ATAS.Indicators.Custom
                     string arrowStr = div.IsBullish ? "▲" : "▼";
                     
                     Color arrowColor;
-                    if (div.IsMajor)
+                    if (div.IsInvalidated && DimInvalidatedArrows)
+                    {
+                        arrowColor = InvalidatedArrowColor;
+                    }
+                    else if (div.IsMajor)
                     {
                         arrowColor = div.IsBullish ? BullishDivergenceColor : BearishDivergenceColor;
                     }
@@ -1512,6 +1608,19 @@ namespace ATAS.Indicators.Custom
                         if (!ShowBottomStats || arrowY + (int)arrowSize.Height <= bottomAreaY)
                         {
                             context.DrawString(arrowStr, currentArrowFont, arrowColor, arrowX, arrowY);
+
+                            // Draw Cross Strike (Dấu gạch chéo X) if signal is invalidated
+                            if (div.IsInvalidated && MarkInvalidatedDivergences && _invalidationPen != null)
+                            {
+                                int pad = 2;
+                                int sx1 = arrowX - pad;
+                                int sx2 = arrowX + (int)arrowSize.Width + pad;
+                                int sy1 = arrowY - pad;
+                                int sy2 = arrowY + (int)arrowSize.Height + pad;
+
+                                context.DrawLine(_invalidationPen, sx1, sy1, sx2, sy2);
+                                context.DrawLine(_invalidationPen, sx1, sy2, sx2, sy1);
+                            }
                         }
                     }
                     else
@@ -1522,6 +1631,19 @@ namespace ATAS.Indicators.Custom
                         if (arrowY >= 0)
                         {
                             context.DrawString(arrowStr, currentArrowFont, arrowColor, arrowX, arrowY);
+
+                            // Draw Cross Strike (Dấu gạch chéo X) if signal is invalidated
+                            if (div.IsInvalidated && MarkInvalidatedDivergences && _invalidationPen != null)
+                            {
+                                int pad = 2;
+                                int sx1 = arrowX - pad;
+                                int sx2 = arrowX + (int)arrowSize.Width + pad;
+                                int sy1 = arrowY - pad;
+                                int sy2 = arrowY + (int)arrowSize.Height + pad;
+
+                                context.DrawLine(_invalidationPen, sx1, sy1, sx2, sy2);
+                                context.DrawLine(_invalidationPen, sx1, sy2, sx2, sy1);
+                            }
                         }
                     }
                 }
@@ -1745,6 +1867,12 @@ namespace ATAS.Indicators.Custom
                 _lastImbalanceLineWidth = LineWidth;
                 _sellImbalancePen = new RenderPen(BidAskImbalanceColor, LineWidth);
             }
+
+            if (_invalidationPen == null || _lastInvalidationColor != InvalidatedStrikeColor)
+            {
+                _lastInvalidationColor = InvalidatedStrikeColor;
+                _invalidationPen = new RenderPen(InvalidatedStrikeColor, 2);
+            }
         }
 
         // ----------------------------------------------------
@@ -1823,6 +1951,10 @@ namespace ATAS.Indicators.Custom
                     $"BearishDivergenceColor={BearishDivergenceColor.ToArgb()}",
                     $"MinorBullishDivergenceColor={MinorBullishDivergenceColor.ToArgb()}",
                     $"MinorBearishDivergenceColor={MinorBearishDivergenceColor.ToArgb()}",
+                    $"MarkInvalidatedDivergences={MarkInvalidatedDivergences}",
+                    $"DimInvalidatedArrows={DimInvalidatedArrows}",
+                    $"InvalidatedStrikeColor={InvalidatedStrikeColor.ToArgb()}",
+                    $"InvalidatedArrowColor={InvalidatedArrowColor.ToArgb()}",
                     $"DivergenceDaysLookBack={DivergenceDaysLookBack}",
                     $"MaxDivergenceArrows={MaxDivergenceArrows}"
                 };
@@ -1881,6 +2013,8 @@ namespace ATAS.Indicators.Custom
                     _minorDeltaPercentageThreshold = 2.5m;
                     _majorArrowSize = 15;
                     _minorArrowSize = 9;
+                    _markInvalidatedDivergences = true;
+                    _dimInvalidatedArrows = true;
                     _divergenceDaysLookBack = 20;
                     _maxDivergenceArrows = 100;
                     _isApplyingProfile = false;
@@ -1970,6 +2104,10 @@ namespace ATAS.Indicators.Custom
                 if (dict.TryGetValue("BearishDivergenceColor", out string? bearishDivergenceColorStr) && int.TryParse(bearishDivergenceColorStr, out int bearishDivergenceColorArgb)) _bearishDivergenceColor = Color.FromArgb(bearishDivergenceColorArgb);
                 if (dict.TryGetValue("MinorBullishDivergenceColor", out string? minorBullishDivergenceColorStr) && int.TryParse(minorBullishDivergenceColorStr, out int minorBullishDivergenceColorArgb)) _minorBullishDivergenceColor = Color.FromArgb(minorBullishDivergenceColorArgb);
                 if (dict.TryGetValue("MinorBearishDivergenceColor", out string? minorBearishDivergenceColorStr) && int.TryParse(minorBearishDivergenceColorStr, out int minorBearishDivergenceColorArgb)) _minorBearishDivergenceColor = Color.FromArgb(minorBearishDivergenceColorArgb);
+                if (dict.TryGetValue("MarkInvalidatedDivergences", out string? markInvalidatedDivergencesStr) && bool.TryParse(markInvalidatedDivergencesStr, out bool markInvalidatedDivergences)) _markInvalidatedDivergences = markInvalidatedDivergences;
+                if (dict.TryGetValue("DimInvalidatedArrows", out string? dimInvalidatedArrowsStr) && bool.TryParse(dimInvalidatedArrowsStr, out bool dimInvalidatedArrows)) _dimInvalidatedArrows = dimInvalidatedArrows;
+                if (dict.TryGetValue("InvalidatedStrikeColor", out string? invalidatedStrikeColorStr) && int.TryParse(invalidatedStrikeColorStr, out int invalidatedStrikeColorArgb)) _invalidatedStrikeColor = Color.FromArgb(invalidatedStrikeColorArgb);
+                if (dict.TryGetValue("InvalidatedArrowColor", out string? invalidatedArrowColorStr) && int.TryParse(invalidatedArrowColorStr, out int invalidatedArrowColorArgb)) _invalidatedArrowColor = Color.FromArgb(invalidatedArrowColorArgb);
                 if (dict.TryGetValue("DivergenceDaysLookBack", out string? divergenceDaysLookBackStr) && int.TryParse(divergenceDaysLookBackStr, out int divergenceDaysLookBack)) _divergenceDaysLookBack = divergenceDaysLookBack;
                 if (dict.TryGetValue("MaxDivergenceArrows", out string? maxDivergenceArrowsStr) && int.TryParse(maxDivergenceArrowsStr, out int maxDivergenceArrows)) _maxDivergenceArrows = maxDivergenceArrows;
 
