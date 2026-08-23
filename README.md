@@ -36,14 +36,15 @@ Chỉ báo Custom Footprint cao cấp dành cho nền tảng giao dịch **ATAS 
    - Quét mất cân bằng mua/bán theo đường chéo với các bộ lọc `Imbalance Ratio (%)`, `Imbalance Volume`, `Imbalance Range`.
    - Tùy chọn **`Line till touch`**: Tự động triệt tiêu (biến mất) đường mất cân bằng khi giá quay lại kiểm tra (mitigate).
 
-8. **Delta Divergence (Phân Kỳ Delta - Mũi Tên Tín Hiệu & Tự Động Gạch Chéo Khi Bị Phủ Nhận):**
+8. **Delta Divergence (Phân Kỳ Delta - Mũi Tên Tín Hiệu & Tự Động Làm Mờ Xám Khi Bị Phủ Nhận):**
    - **Bullish Delta Divergence:** Nến tăng (Close > Open) nhưng Delta âm $\rightarrow$ Mũi tên hướng lên `▲` dưới chân nến (Hấp thụ mua).
    - **Bearish Delta Divergence:** Nến giảm (Close < Open) nhưng Delta dương $\rightarrow$ Mũi tên hướng xuống `▼` trên đầu nến (Hấp thụ bán).
    - **Cơ Chế Đánh Dấu Invalidation (Failed Divergence):**
-     - Khi một nến sau đục thủng **High** của nến Bearish (hoặc thủng **Low** của nến Bullish), chỉ báo sẽ **tự động vẽ dấu gạch chéo `X` đỏ/xám đè lên mũi tên** và làm mờ mũi tên bị phủ nhận (`Dim Invalidated Arrows`).
-     - Giúp nhận biết ngay các tín hiệu phân kỳ bị thất bại mà không cần nhìn lại cấu trúc nến, chart luôn rõ ràng giữa tín hiệu còn hiệu lực và tín hiệu đã bị nuốt chửng.
+     - Kiểm tra tức thời trong phạm vi **1 đến 2 cây nến tiếp theo** (`Invalidation Check Window`).
+     - Nếu trong 1-2 nến kế tiếp, giá đục thủng **High** của nến Bearish (hoặc thủng **Low** của nến Bullish) $\rightarrow$ Mũi tên sẽ **tự động chuyển sang màu xám mờ (`InvalidatedArrowColor`)**.
+     - Giúp nhận biết ngay các tín hiệu phân kỳ bị thất bại tức thì mà không cần rối mắt bởi các ký hiệu vẽ thêm, chart luôn giữ được sự tinh gọn tối đa.
    - Bộ lọc tỷ lệ % Delta co giãn thông minh: **Major Divergence** (mặc định $\ge 10\%$) và **Minor Divergence** (mặc định $\ge 2.5\%$).
-   - Tùy chỉnh riêng biệt kích thước và màu sắc cho mũi tên Lớn, Nhỏ, màu gạch chéo `X` và màu mũi tên mờ.
+   - Tùy chỉnh riêng biệt kích thước và màu sắc cho mũi tên Lớn, Nhỏ, màu xám mờ và số nến kiểm tra.
 
 9. **Chế Độ Màu Preset (Dark Mode & Light Mode):**
    - **DarkMode Preset:** Thiết kế tối ưu cho nền đen/xám tối.
