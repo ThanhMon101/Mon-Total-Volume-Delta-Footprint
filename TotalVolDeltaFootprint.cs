@@ -226,7 +226,7 @@ namespace ATAS.Indicators.Custom
         private bool _showDivergence = true;
         private decimal _deltaPercentageThreshold = 10m;
         private bool _showMinorDivergence = true;
-        private decimal _minorDeltaPercentageThreshold = 5m;
+        private decimal _minorDeltaPercentageThreshold = 2.5m;
         private int _majorArrowSize = 15;
         private int _minorArrowSize = 9;
         private Color _bullishDivergenceColor = Color.FromArgb(255, 46, 204, 113);
@@ -802,8 +802,7 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Stacked Imbalance Drawing Settings
         // ----------------------------------------------------
-        [Display(Name = "Line Till Touch", GroupName = "08. STACKED IMBALANCE", Order = 450,
-            Description = "Extends the level until a later candle touches it, then preserves the historical line up to that touch.")]
+        [Display(Name = "Line Till Touch", GroupName = "08. STACKED IMBALANCE", Order = 450)]
         public bool LineTillTouch
         {
             get => _lineTillTouch;
@@ -843,16 +842,14 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Delta Divergence Settings
         // ----------------------------------------------------
-        [Display(Name = "Show Major Absorption", GroupName = "09. DELTA DIVERGENCE", Order = 500,
-            Description = "Contrarian footprint pattern: an up candle with negative delta, or a down candle with positive delta. Use as context, not a standalone entry.")]
+        [Display(Name = "Show Major Divergence", GroupName = "09. DELTA DIVERGENCE", Order = 500)]
         public bool ShowDivergence
         {
             get => _showDivergence;
             set { if (_showDivergence != value) { _showDivergence = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Major |Delta| / Volume (%)", GroupName = "09. DELTA DIVERGENCE", Order = 510,
-            Description = "Normalized executed-volume filter. Ten percent is a conservative baseline, not a universally backtested optimum.")]
+        [Display(Name = "Major Delta Threshold (%)", GroupName = "09. DELTA DIVERGENCE", Order = 510)]
         [Range(typeof(decimal), "0", "100")]
         public decimal DeltaPercentageThreshold
         {
@@ -870,15 +867,14 @@ namespace ATAS.Indicators.Custom
             }
         }
 
-        [Display(Name = "Show Minor Absorption", GroupName = "09. DELTA DIVERGENCE", Order = 512)]
+        [Display(Name = "Show Minor Divergence", GroupName = "09. DELTA DIVERGENCE", Order = 512)]
         public bool ShowMinorDivergence
         {
             get => _showMinorDivergence;
             set { if (_showMinorDivergence != value) { _showMinorDivergence = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Minor |Delta| / Volume (%)", GroupName = "09. DELTA DIVERGENCE", Order = 514,
-            Description = "Five percent reduces low-information sign mismatches while retaining early absorption candidates.")]
+        [Display(Name = "Minor Delta Threshold (%)", GroupName = "09. DELTA DIVERGENCE", Order = 514)]
         [Range(typeof(decimal), "0", "100")]
         public decimal MinorDeltaPercentageThreshold
         {
@@ -1098,7 +1094,7 @@ namespace ATAS.Indicators.Custom
                     _imbalanceRange = 3;
                     _imbalanceVolume = 20m;
                     _deltaPercentageThreshold = 10m;
-                    _minorDeltaPercentageThreshold = 5m;
+                    _minorDeltaPercentageThreshold = 2m;
                     break;
 
                 case IndicatorProfile.Profile1: // NQ Overnight
@@ -1110,8 +1106,8 @@ namespace ATAS.Indicators.Custom
                     _imbalanceRatio = 300m;
                     _imbalanceRange = 3;
                     _imbalanceVolume = 8m;
-                    _deltaPercentageThreshold = 10m;
-                    _minorDeltaPercentageThreshold = 5m;
+                    _deltaPercentageThreshold = 12m;
+                    _minorDeltaPercentageThreshold = 3m;
                     break;
 
                 case IndicatorProfile.Profile2: // ES RTH
@@ -1123,8 +1119,8 @@ namespace ATAS.Indicators.Custom
                     _imbalanceRatio = 300m;
                     _imbalanceRange = 3;
                     _imbalanceVolume = 40m;
-                    _deltaPercentageThreshold = 10m;
-                    _minorDeltaPercentageThreshold = 5m;
+                    _deltaPercentageThreshold = 8m;
+                    _minorDeltaPercentageThreshold = 2m;
                     break;
 
                 case IndicatorProfile.Profile3: // ES Overnight
@@ -1137,7 +1133,7 @@ namespace ATAS.Indicators.Custom
                     _imbalanceRange = 3;
                     _imbalanceVolume = 12m;
                     _deltaPercentageThreshold = 10m;
-                    _minorDeltaPercentageThreshold = 5m;
+                    _minorDeltaPercentageThreshold = 2.5m;
                     break;
 
                 default: // Custom slots start from a neutral footprint baseline.
@@ -1150,7 +1146,7 @@ namespace ATAS.Indicators.Custom
                     _imbalanceRange = 3;
                     _imbalanceVolume = 30m;
                     _deltaPercentageThreshold = 10m;
-                    _minorDeltaPercentageThreshold = 5m;
+                    _minorDeltaPercentageThreshold = 2.5m;
                     break;
             }
 
@@ -1760,10 +1756,13 @@ namespace ATAS.Indicators.Custom
             {
                 foreach (var line in _imbalanceLines)
                 {
+                    // Legacy behavior: once touched, remove the level entirely.
+                    if (LineTillTouch && line.IsMitigated)
+                        continue;
+
                     int endBar = CurrentBar - 1;
                     if (line.IsMitigated)
                     {
-                        // Preserve the historical level and stop it at the first touch.
                         endBar = line.MitigatedBar;
                     }
 
