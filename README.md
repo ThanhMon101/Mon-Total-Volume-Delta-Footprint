@@ -52,9 +52,20 @@ Chỉ báo Custom Footprint cao cấp dành cho nền tảng giao dịch **ATAS 
    - **Custom:** Tự do tùy biến từng mã màu.
 
 10. **Hệ Thống Quản Lý Profiles Đa Năng:**
-    - Hỗ trợ lưu trữ riêng biệt 6 cấu hình (`Default`, `Profile 1` $\rightarrow$ `Profile 5`).
+    - Dropdown `1) Trading Profile` nằm ngay đầu Settings để chuyển nhanh giữa 4 preset theo thanh khoản thị trường/phiên:
+
+      | Profile | Ticks grouping | Volume tím / cam | Imbalance (ratio / range / min vol) | Delta major / minor |
+      |---|---:|---:|---:|---:|
+      | NQ RTH 09:30-16:00 ET | 12 | 150 / 300 | 280% / 2 / 20 | 10% / 2% |
+      | NQ Overnight 18:00-09:30 ET | 8 | 60 / 120 | 300% / 2 / 8 | 12% / 3% |
+      | ES RTH 09:30-16:00 ET | 4 | 300 / 600 | 300% / 3 / 40 | 8% / 2% |
+      | ES Overnight 18:00-09:30 ET | 4 | 100 / 200 | 320% / 2 / 12 | 10% / 2.5% |
+
+    - Hai slot còn lại là `Custom 1` và `Custom 2` để tự tinh chỉnh.
+    - Các khung giờ trên dùng múi giờ **US Eastern (ET)**; hãy chọn chart/session template tương ứng trong ATAS.
     - Đổi tên trực tiếp tại ô `Profile Rename / Label`, tự động cập nhật ngay trên danh sách chọn `Active Profile` theo thời gian thực.
     - Lưu trữ vĩnh viễn cấu hình vào file `.cfg` trên máy.
+    - Settings được gom thành 9 nhóm đánh số (Quick Setup, Theme, Footprint, POC, Middle Candle, Right Profile, Bottom Statistics, Stacked Imbalance, Delta Divergence) để tìm tham số nhanh hơn.
 
 ---
 

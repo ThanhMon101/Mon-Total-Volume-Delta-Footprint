@@ -41,6 +41,34 @@ namespace ATAS.Indicators.Custom
             Custom
         }
 
+        private const string QuickSetupGroup = "01. QUICK SETUP";
+
+        private static string GetDefaultProfileLabel(IndicatorProfile profile)
+        {
+            return profile switch
+            {
+                IndicatorProfile.Default => "NQ RTH 09:30-16:00 ET",
+                IndicatorProfile.Profile1 => "NQ Overnight 18:00-09:30 ET",
+                IndicatorProfile.Profile2 => "ES RTH 09:30-16:00 ET",
+                IndicatorProfile.Profile3 => "ES Overnight 18:00-09:30 ET",
+                IndicatorProfile.Profile4 => "Custom 1",
+                IndicatorProfile.Profile5 => "Custom 2",
+                _ => profile.ToString()
+            };
+        }
+
+        private static string GetProfileScope(IndicatorProfile profile)
+        {
+            return profile switch
+            {
+                IndicatorProfile.Default => "NQ | Regular session | 09:30-16:00 US Eastern",
+                IndicatorProfile.Profile1 => "NQ | Overnight session | 18:00-09:30 US Eastern",
+                IndicatorProfile.Profile2 => "ES | Regular session | 09:30-16:00 US Eastern",
+                IndicatorProfile.Profile3 => "ES | Overnight session | 18:00-09:30 US Eastern",
+                _ => "User-defined profile"
+            };
+        }
+
         // ----------------------------------------------------
         // Grouped Price Level Helper Class
         // ----------------------------------------------------
@@ -122,7 +150,7 @@ namespace ATAS.Indicators.Custom
         // Profile & Theme State Management
         private IndicatorProfile _activeProfile = IndicatorProfile.Default;
         private ColorThemeMode _colorTheme = ColorThemeMode.DarkMode;
-        private string _profileLabel = "Default";
+        private string _profileLabel = "NQ RTH 09:30-16:00 ET";
         private bool _isApplyingProfile = false;
 
         // ----------------------------------------------------
@@ -225,7 +253,7 @@ namespace ATAS.Indicators.Custom
                 string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ATAS", "Indicators", "Profiles");
                 foreach (IndicatorProfile p in Enum.GetValues(typeof(IndicatorProfile)))
                 {
-                    string defaultLabel = p == IndicatorProfile.Default ? "Default" : p.ToString();
+                    string defaultLabel = GetDefaultProfileLabel(p);
                     _profileLabelsMap[p] = defaultLabel;
 
                     string filepath = Path.Combine(folder, $"TotalVolDeltaFootprint_{p}.cfg");
@@ -268,7 +296,7 @@ namespace ATAS.Indicators.Custom
         {
             if (!_profileLabelsMap.TryGetValue(profile, out string? label) || string.IsNullOrEmpty(label))
             {
-                label = profile == IndicatorProfile.Default ? "Default" : profile.ToString();
+                label = GetDefaultProfileLabel(profile);
             }
 
             int slotNum = (int)profile + 1;
@@ -302,7 +330,8 @@ namespace ATAS.Indicators.Custom
         // Profile Management Settings
         // ----------------------------------------------------
         [TypeConverter(typeof(ProfileNameConverter))]
-        [Display(Name = "Active Profile", GroupName = "Profiles", Order = 0)]
+        [Display(Name = "1) Trading Profile", GroupName = QuickSetupGroup, Order = 0,
+            Description = "Switch instantly between the four optimized NQ/ES session presets. Changes made inside a profile are saved automatically.")]
         public string ActiveProfile
         {
             get => GetDisplayNameForProfile(_activeProfile);
@@ -324,12 +353,19 @@ namespace ATAS.Indicators.Custom
                     RedrawChart();
 
                     OnPropertyChanged(nameof(ProfileLabel));
+                    OnPropertyChanged(nameof(ActivePresetScope));
                     OnPropertyChanged(nameof(ActiveProfile));
                 }
             }
         }
 
-        [Display(Name = "Profile Rename / Label", GroupName = "Profiles", Order = 1)]
+        [ReadOnly(true)]
+        [Display(Name = "2) Preset Scope", GroupName = QuickSetupGroup, Order = 1,
+            Description = "Reference session only. Set the ATAS chart/session template to the matching US Eastern hours.")]
+        public string ActivePresetScope => GetProfileScope(_activeProfile);
+
+        [Display(Name = "3) Rename Profile (optional)", GroupName = QuickSetupGroup, Order = 2,
+            Description = "Optional custom label. The profile slot and its optimized parameters remain unchanged.")]
         public string ProfileLabel
         {
             get => _profileLabel;
@@ -352,7 +388,7 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Theme Preset Settings (Dark Mode / Light Mode / Custom)
         // ----------------------------------------------------
-        [Display(Name = "Color Theme Preset", GroupName = "Theme Settings", Order = 5)]
+        [Display(Name = "Color Theme", GroupName = "02. THEME & FONT", Order = 5)]
         public ColorThemeMode ColorTheme
         {
             get => _colorTheme;
@@ -382,21 +418,22 @@ namespace ATAS.Indicators.Custom
         // User Settings (Configurable in ATAS Settings Panel)
         // ----------------------------------------------------
         
-        [Display(Name = "Font Family", GroupName = "Font Settings", Order = 10)]
+        [Display(Name = "Font Family", GroupName = "02. THEME & FONT", Order = 10)]
         public string FontFamily
         {
             get => _fontFamily;
             set { if (_fontFamily != value) { _fontFamily = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Font Size", GroupName = "Font Settings", Order = 20)]
+        [Display(Name = "Font Size", GroupName = "02. THEME & FONT", Order = 20)]
         public int FontSize
         {
             get => _fontSize;
             set { if (_fontSize != value) { _fontSize = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Ticks Grouping", GroupName = "Footprint Grouping", Order = 25)]
+        [Display(Name = "Ticks Grouping", GroupName = "03. FOOTPRINT", Order = 25,
+            Description = "Number of price ticks combined into one footprint row. This is optimized per trading profile.")]
         [Range(1, 100)]
         public int TicksGrouping
         {
@@ -404,112 +441,112 @@ namespace ATAS.Indicators.Custom
             set { if (_ticksGrouping != value) { _ticksGrouping = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Min Candle Width for Footprint Text", GroupName = "Footprint Grouping", Order = 26)]
+        [Display(Name = "Min Width for Text", GroupName = "03. FOOTPRINT", Order = 26)]
         public int MinBarWidthForText
         {
             get => _minBarWidthForText;
             set { if (_minBarWidthForText != value) { _minBarWidthForText = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Purple Highlight Threshold", GroupName = "Volume Thresholds", Order = 30)]
+        [Display(Name = "High Volume Threshold (Purple)", GroupName = "03. FOOTPRINT", Order = 30)]
         public decimal PurpleThreshold
         {
             get => _purpleThreshold;
             set { if (_purpleThreshold != value) { _purpleThreshold = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Purple Highlight Color", GroupName = "Volume Thresholds", Order = 40)]
+        [Display(Name = "High Volume Color", GroupName = "03. FOOTPRINT", Order = 40)]
         public Color PurpleColor
         {
             get => _purpleColor;
             set { if (_purpleColor != value) { _purpleColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Orange Highlight Threshold", GroupName = "Volume Thresholds", Order = 50)]
+        [Display(Name = "Extreme Volume Threshold (Orange)", GroupName = "03. FOOTPRINT", Order = 50)]
         public decimal OrangeThreshold
         {
             get => _orangeThreshold;
             set { if (_orangeThreshold != value) { _orangeThreshold = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Orange Highlight Color", GroupName = "Volume Thresholds", Order = 60)]
+        [Display(Name = "Extreme Volume Color", GroupName = "03. FOOTPRINT", Order = 60)]
         public Color OrangeColor
         {
             get => _orangeColor;
             set { if (_orangeColor != value) { _orangeColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Default Cell Background", GroupName = "Cell Styling", Order = 70)]
+        [Display(Name = "Cell Background", GroupName = "03. FOOTPRINT", Order = 70)]
         public Color DefaultBgColor
         {
             get => _defaultBgColor;
             set { if (_defaultBgColor != value) { _defaultBgColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Volume Text Color (Normal)", GroupName = "Cell Styling", Order = 80)]
+        [Display(Name = "Volume Text", GroupName = "03. FOOTPRINT", Order = 80)]
         public Color VolumeTextColor
         {
             get => _volumeTextColor;
             set { if (_volumeTextColor != value) { _volumeTextColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Volume Text Color (Highlighted)", GroupName = "Cell Styling", Order = 90)]
+        [Display(Name = "Highlighted Volume Text", GroupName = "03. FOOTPRINT", Order = 90)]
         public Color VolumeHighlightedTextColor
         {
             get => _volumeHighlightedTextColor;
             set { if (_volumeHighlightedTextColor != value) { _volumeHighlightedTextColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Positive Delta Color", GroupName = "Delta Colors", Order = 100)]
+        [Display(Name = "Positive Delta", GroupName = "03. FOOTPRINT", Order = 100)]
         public Color PositiveDeltaColor
         {
             get => _positiveDeltaColor;
             set { if (_positiveDeltaColor != value) { _positiveDeltaColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Negative Delta Color", GroupName = "Delta Colors", Order = 110)]
+        [Display(Name = "Negative Delta", GroupName = "03. FOOTPRINT", Order = 110)]
         public Color NegativeDeltaColor
         {
             get => _negativeDeltaColor;
             set { if (_negativeDeltaColor != value) { _negativeDeltaColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Neutral Delta Color", GroupName = "Delta Colors", Order = 120)]
+        [Display(Name = "Neutral Delta", GroupName = "03. FOOTPRINT", Order = 120)]
         public Color NeutralDeltaColor
         {
             get => _neutralDeltaColor;
             set { if (_neutralDeltaColor != value) { _neutralDeltaColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Highlight POC (Borders)", GroupName = "POC Settings", Order = 130)]
+        [Display(Name = "Highlight POC", GroupName = "04. POC & GRID", Order = 130)]
         public bool HighlightPoc
         {
             get => _highlightPoc;
             set { if (_highlightPoc != value) { _highlightPoc = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "POC Border Color", GroupName = "POC Settings", Order = 140)]
+        [Display(Name = "POC Border Color", GroupName = "04. POC & GRID", Order = 140)]
         public Color PocBorderColor
         {
             get => _pocBorderColor;
             set { if (_pocBorderColor != value) { _pocBorderColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "POC Border Width", GroupName = "POC Settings", Order = 150)]
+        [Display(Name = "POC Border Width", GroupName = "04. POC & GRID", Order = 150)]
         public int PocBorderWidth
         {
             get => _pocBorderWidth;
             set { if (_pocBorderWidth != value) { _pocBorderWidth = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Draw Grid Lines", GroupName = "Grid Settings", Order = 160)]
+        [Display(Name = "Draw Grid Lines", GroupName = "04. POC & GRID", Order = 160)]
         public bool DrawGridLines
         {
             get => _drawGridLines;
             set { if (_drawGridLines != value) { _drawGridLines = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Grid Line Color", GroupName = "Grid Settings", Order = 170)]
+        [Display(Name = "Grid Line Color", GroupName = "04. POC & GRID", Order = 170)]
         public Color GridLineColor
         {
             get => _gridLineColor;
@@ -519,35 +556,35 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Candle in Middle Settings
         // ----------------------------------------------------
-        [Display(Name = "Show Candle in Middle", GroupName = "Middle Candle Settings", Order = 180)]
+        [Display(Name = "Show Middle Candle", GroupName = "05. MIDDLE CANDLE", Order = 180)]
         public bool ShowCandleInMiddle
         {
             get => _showCandleInMiddle;
             set { if (_showCandleInMiddle != value) { _showCandleInMiddle = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Candle Body Width", GroupName = "Middle Candle Settings", Order = 190)]
+        [Display(Name = "Body Width", GroupName = "05. MIDDLE CANDLE", Order = 190)]
         public int CandleWidth
         {
             get => _candleWidth;
             set { if (_candleWidth != value) { _candleWidth = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Candle Wick Width", GroupName = "Middle Candle Settings", Order = 200)]
+        [Display(Name = "Wick Width", GroupName = "05. MIDDLE CANDLE", Order = 200)]
         public int WickWidth
         {
             get => _wickWidth;
             set { if (_wickWidth != value) { _wickWidth = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Bullish Candle Color", GroupName = "Middle Candle Settings", Order = 210)]
+        [Display(Name = "Bullish Color", GroupName = "05. MIDDLE CANDLE", Order = 210)]
         public Color BullishCandleColor
         {
             get => _bullishCandleColor;
             set { if (_bullishCandleColor != value) { _bullishCandleColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Bearish Candle Color", GroupName = "Middle Candle Settings", Order = 220)]
+        [Display(Name = "Bearish Color", GroupName = "05. MIDDLE CANDLE", Order = 220)]
         public Color BearishCandleColor
         {
             get => _bearishCandleColor;
@@ -557,35 +594,35 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Right-side Profile Settings
         // ----------------------------------------------------
-        [Display(Name = "Show Right Profile", GroupName = "Right Profile Settings", Order = 230)]
+        [Display(Name = "Show Right Profile", GroupName = "06. RIGHT PROFILE", Order = 230)]
         public bool ShowRightProfile
         {
             get => _showRightProfile;
             set { if (_showRightProfile != value) { _showRightProfile = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Profile Width (pixels)", GroupName = "Right Profile Settings", Order = 240)]
+        [Display(Name = "Width (pixels)", GroupName = "06. RIGHT PROFILE", Order = 240)]
         public int RightProfileWidth
         {
             get => _rightProfileWidth;
             set { if (_rightProfileWidth != value) { _rightProfileWidth = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Profile Background", GroupName = "Right Profile Settings", Order = 250)]
+        [Display(Name = "Background", GroupName = "06. RIGHT PROFILE", Order = 250)]
         public Color RightProfileBgColor
         {
             get => _rightProfileBgColor;
             set { if (_rightProfileBgColor != value) { _rightProfileBgColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Profile Color (Positive Delta)", GroupName = "Right Profile Settings", Order = 260)]
+        [Display(Name = "Positive Delta", GroupName = "06. RIGHT PROFILE", Order = 260)]
         public Color RightProfileColorPositive
         {
             get => _rightProfileColorPositive;
             set { if (_rightProfileColorPositive != value) { _rightProfileColorPositive = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Profile Color (Negative Delta)", GroupName = "Right Profile Settings", Order = 270)]
+        [Display(Name = "Negative Delta", GroupName = "06. RIGHT PROFILE", Order = 270)]
         public Color RightProfileColorNegative
         {
             get => _rightProfileColorNegative;
@@ -595,56 +632,56 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Bottom Stats Settings
         // ----------------------------------------------------
-        [Display(Name = "Show Bottom Stats", GroupName = "Bottom Stats Settings", Order = 280)]
+        [Display(Name = "Show Bottom Stats", GroupName = "07. BOTTOM STATISTICS", Order = 280)]
         public bool ShowBottomStats
         {
             get => _showBottomStats;
             set { if (_showBottomStats != value) { _showBottomStats = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Delta Pos Bg Color", GroupName = "Bottom Stats Settings", Order = 290)]
+        [Display(Name = "Positive Delta Background", GroupName = "07. BOTTOM STATISTICS", Order = 290)]
         public Color DeltaPositiveBgColor
         {
             get => _deltaPositiveBgColor;
             set { if (_deltaPositiveBgColor != value) { _deltaPositiveBgColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Delta Neg Bg Color", GroupName = "Bottom Stats Settings", Order = 300)]
+        [Display(Name = "Negative Delta Background", GroupName = "07. BOTTOM STATISTICS", Order = 300)]
         public Color DeltaNegativeBgColor
         {
             get => _deltaNegativeBgColor;
             set { if (_deltaNegativeBgColor != value) { _deltaNegativeBgColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "CD Day Pos Bg Color", GroupName = "Bottom Stats Settings", Order = 310)]
+        [Display(Name = "Positive CD Background", GroupName = "07. BOTTOM STATISTICS", Order = 310)]
         public Color CdDayPositiveBgColor
         {
             get => _cdDayPositiveBgColor;
             set { if (_cdDayPositiveBgColor != value) { _cdDayPositiveBgColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "CD Day Neg Bg Color", GroupName = "Bottom Stats Settings", Order = 320)]
+        [Display(Name = "Negative CD Background", GroupName = "07. BOTTOM STATISTICS", Order = 320)]
         public Color CdDayNegativeBgColor
         {
             get => _cdDayNegativeBgColor;
             set { if (_cdDayNegativeBgColor != value) { _cdDayNegativeBgColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Candle Vol Bg Color", GroupName = "Bottom Stats Settings", Order = 330)]
+        [Display(Name = "Candle Volume Background", GroupName = "07. BOTTOM STATISTICS", Order = 330)]
         public Color CandleVolBgColor
         {
             get => _candleVolBgColor;
             set { if (_candleVolBgColor != value) { _candleVolBgColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Stats Text Color", GroupName = "Bottom Stats Settings", Order = 340)]
+        [Display(Name = "Value Text", GroupName = "07. BOTTOM STATISTICS", Order = 340)]
         public Color StatsTextColor
         {
             get => _statsTextColor;
             set { if (_statsTextColor != value) { _statsTextColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Stats Label Color", GroupName = "Bottom Stats Settings", Order = 350)]
+        [Display(Name = "Label Text", GroupName = "07. BOTTOM STATISTICS", Order = 350)]
         public Color StatsLabelColor
         {
             get => _statsLabelColor;
@@ -654,42 +691,42 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Stacked Imbalance Settings (Data tab)
         // ----------------------------------------------------
-        [Display(Name = "Show Stacked Imbalances", GroupName = "Stacked Imbalances - Settings", Order = 390)]
+        [Display(Name = "Show Stacked Imbalances", GroupName = "08. STACKED IMBALANCE", Order = 390)]
         public bool ShowImbalances
         {
             get => _showImbalances;
             set { if (_showImbalances != value) { _showImbalances = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Ignore zero values", GroupName = "Stacked Imbalances - Settings", Order = 400)]
+        [Display(Name = "Ignore Zero Values", GroupName = "08. STACKED IMBALANCE", Order = 400)]
         public bool IgnoreZeroValues
         {
             get => _ignoreZeroValues;
             set { if (_ignoreZeroValues != value) { _ignoreZeroValues = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Imbalance Ratio (%)", GroupName = "Stacked Imbalances - Settings", Order = 410)]
+        [Display(Name = "Ratio (%)", GroupName = "08. STACKED IMBALANCE", Order = 410)]
         public decimal ImbalanceRatio
         {
             get => _imbalanceRatio;
             set { if (_imbalanceRatio != value) { _imbalanceRatio = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Imbalance Range", GroupName = "Stacked Imbalances - Settings", Order = 420)]
+        [Display(Name = "Consecutive Levels", GroupName = "08. STACKED IMBALANCE", Order = 420)]
         public int ImbalanceRange
         {
             get => _imbalanceRange;
             set { if (_imbalanceRange != value) { _imbalanceRange = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Imbalance Volume", GroupName = "Stacked Imbalances - Settings", Order = 430)]
+        [Display(Name = "Minimum Volume", GroupName = "08. STACKED IMBALANCE", Order = 430)]
         public decimal ImbalanceVolume
         {
             get => _imbalanceVolume;
             set { if (_imbalanceVolume != value) { _imbalanceVolume = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Days look back", GroupName = "Stacked Imbalances - Calculation", Order = 440)]
+        [Display(Name = "Days Look Back", GroupName = "08. STACKED IMBALANCE", Order = 440)]
         public int DaysLookBack
         {
             get => _daysLookBack;
@@ -699,35 +736,35 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Stacked Imbalance Drawing Settings
         // ----------------------------------------------------
-        [Display(Name = "Line till touch", GroupName = "Stacked Imbalances - Drawing", Order = 450)]
+        [Display(Name = "Line Till Touch", GroupName = "08. STACKED IMBALANCE", Order = 450)]
         public bool LineTillTouch
         {
             get => _lineTillTouch;
             set { if (_lineTillTouch != value) { _lineTillTouch = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Ask/Bid Imbalance Color", GroupName = "Stacked Imbalances - Drawing", Order = 460)]
+        [Display(Name = "Buy Imbalance Color", GroupName = "08. STACKED IMBALANCE", Order = 460)]
         public Color AskBidImbalanceColor
         {
             get => _askBidImbalanceColor;
             set { if (_askBidImbalanceColor != value) { _askBidImbalanceColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Bid/Ask Imbalance Color", GroupName = "Stacked Imbalances - Drawing", Order = 470)]
+        [Display(Name = "Sell Imbalance Color", GroupName = "08. STACKED IMBALANCE", Order = 470)]
         public Color BidAskImbalanceColor
         {
             get => _bidAskImbalanceColor;
             set { if (_bidAskImbalanceColor != value) { _bidAskImbalanceColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Line width", GroupName = "Stacked Imbalances - Drawing", Order = 480)]
+        [Display(Name = "Line Width", GroupName = "08. STACKED IMBALANCE", Order = 480)]
         public int LineWidth
         {
             get => _lineWidth;
             set { if (_lineWidth != value) { _lineWidth = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Print line for X bars", GroupName = "Stacked Imbalances - Drawing", Order = 490)]
+        [Display(Name = "Maximum Line Bars", GroupName = "08. STACKED IMBALANCE", Order = 490)]
         public int PrintLineForXBars
         {
             get => _printLineForXBars;
@@ -737,84 +774,84 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Delta Divergence Settings
         // ----------------------------------------------------
-        [Display(Name = "Show Major Divergence", GroupName = "Delta Divergence", Order = 500)]
+        [Display(Name = "Show Major Divergence", GroupName = "09. DELTA DIVERGENCE", Order = 500)]
         public bool ShowDivergence
         {
             get => _showDivergence;
             set { if (_showDivergence != value) { _showDivergence = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Major Delta Threshold (%)", GroupName = "Delta Divergence", Order = 510)]
+        [Display(Name = "Major Threshold (%)", GroupName = "09. DELTA DIVERGENCE", Order = 510)]
         public decimal DeltaPercentageThreshold
         {
             get => _deltaPercentageThreshold;
             set { if (_deltaPercentageThreshold != value) { _deltaPercentageThreshold = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Show Minor Divergence", GroupName = "Delta Divergence", Order = 512)]
+        [Display(Name = "Show Minor Divergence", GroupName = "09. DELTA DIVERGENCE", Order = 512)]
         public bool ShowMinorDivergence
         {
             get => _showMinorDivergence;
             set { if (_showMinorDivergence != value) { _showMinorDivergence = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Minor Delta Threshold (%)", GroupName = "Delta Divergence", Order = 514)]
+        [Display(Name = "Minor Threshold (%)", GroupName = "09. DELTA DIVERGENCE", Order = 514)]
         public decimal MinorDeltaPercentageThreshold
         {
             get => _minorDeltaPercentageThreshold;
             set { if (_minorDeltaPercentageThreshold != value) { _minorDeltaPercentageThreshold = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Major Arrow Size", GroupName = "Delta Divergence", Order = 522)]
+        [Display(Name = "Major Arrow Size", GroupName = "09. DELTA DIVERGENCE", Order = 522)]
         public int MajorArrowSize
         {
             get => _majorArrowSize;
             set { if (_majorArrowSize != value) { _majorArrowSize = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Minor Arrow Size", GroupName = "Delta Divergence", Order = 524)]
+        [Display(Name = "Minor Arrow Size", GroupName = "09. DELTA DIVERGENCE", Order = 524)]
         public int MinorArrowSize
         {
             get => _minorArrowSize;
             set { if (_minorArrowSize != value) { _minorArrowSize = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Bullish Divergence Color", GroupName = "Delta Divergence", Order = 530)]
+        [Display(Name = "Major Bullish Color", GroupName = "09. DELTA DIVERGENCE", Order = 530)]
         public Color BullishDivergenceColor
         {
             get => _bullishDivergenceColor;
             set { if (_bullishDivergenceColor != value) { _bullishDivergenceColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Bearish Divergence Color", GroupName = "Delta Divergence", Order = 532)]
+        [Display(Name = "Major Bearish Color", GroupName = "09. DELTA DIVERGENCE", Order = 532)]
         public Color BearishDivergenceColor
         {
             get => _bearishDivergenceColor;
             set { if (_bearishDivergenceColor != value) { _bearishDivergenceColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Minor Bullish Divergence Color", GroupName = "Delta Divergence", Order = 534)]
+        [Display(Name = "Minor Bullish Color", GroupName = "09. DELTA DIVERGENCE", Order = 534)]
         public Color MinorBullishDivergenceColor
         {
             get => _minorBullishDivergenceColor;
             set { if (_minorBullishDivergenceColor != value) { _minorBullishDivergenceColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Minor Bearish Divergence Color", GroupName = "Delta Divergence", Order = 536)]
+        [Display(Name = "Minor Bearish Color", GroupName = "09. DELTA DIVERGENCE", Order = 536)]
         public Color MinorBearishDivergenceColor
         {
             get => _minorBearishDivergenceColor;
             set { if (_minorBearishDivergenceColor != value) { _minorBearishDivergenceColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Mark Invalidated Signals (Dim Gray)", GroupName = "Delta Divergence", Order = 537)]
+        [Display(Name = "Dim Invalidated Signals", GroupName = "09. DELTA DIVERGENCE", Order = 537)]
         public bool MarkInvalidatedDivergences
         {
             get => _markInvalidatedDivergences;
             set { if (_markInvalidatedDivergences != value) { _markInvalidatedDivergences = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Invalidation Check Window (Bars)", GroupName = "Delta Divergence", Order = 538)]
+        [Display(Name = "Invalidation Window (Bars)", GroupName = "09. DELTA DIVERGENCE", Order = 538)]
         [Range(1, 10)]
         public int InvalidationLookbackBars
         {
@@ -822,21 +859,21 @@ namespace ATAS.Indicators.Custom
             set { if (_invalidationLookbackBars != value) { _invalidationLookbackBars = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Invalidated Arrow Color", GroupName = "Delta Divergence", Order = 539)]
+        [Display(Name = "Invalidated Arrow Color", GroupName = "09. DELTA DIVERGENCE", Order = 539)]
         public Color InvalidatedArrowColor
         {
             get => _invalidatedArrowColor;
             set { if (_invalidatedArrowColor != value) { _invalidatedArrowColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Days look back", GroupName = "Delta Divergence", Order = 545)]
+        [Display(Name = "Days Look Back", GroupName = "09. DELTA DIVERGENCE", Order = 545)]
         public int DivergenceDaysLookBack
         {
             get => _divergenceDaysLookBack;
             set { if (_divergenceDaysLookBack != value) { _divergenceDaysLookBack = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Max arrows to display", GroupName = "Delta Divergence", Order = 550)]
+        [Display(Name = "Maximum Arrows", GroupName = "09. DELTA DIVERGENCE", Order = 550)]
         public int MaxDivergenceArrows
         {
             get => _maxDivergenceArrows;
@@ -910,6 +947,110 @@ namespace ATAS.Indicators.Custom
             _minorBullishDivergenceColor = Color.FromArgb(255, 80, 180, 120);
             _minorBearishDivergenceColor = Color.FromArgb(255, 235, 100, 110);
             _invalidatedArrowColor = Color.FromArgb(120, 180, 185, 195);
+        }
+
+        // ----------------------------------------------------
+        // Built-in NQ / ES Session Presets
+        // ----------------------------------------------------
+        private void ApplyBuiltInProfileDefaults(IndicatorProfile profile)
+        {
+            _isApplyingProfile = true;
+
+            // Keep all four trading presets visually consistent. Only the
+            // liquidity-sensitive parameters change between instrument/session.
+            ApplyLightModeColors();
+            _colorTheme = ColorThemeMode.LightMode;
+            _profileLabel = GetDefaultProfileLabel(profile);
+            _profileLabelsMap[profile] = _profileLabel;
+
+            _fontFamily = "Arial";
+            _fontSize = 9;
+            _minBarWidthForText = 35;
+            _highlightPoc = true;
+            _pocBorderWidth = 2;
+            _drawGridLines = false;
+            _showCandleInMiddle = false;
+            _candleWidth = 6;
+            _wickWidth = 1;
+            _showRightProfile = false;
+            _rightProfileWidth = 100;
+            _showBottomStats = false;
+
+            _showImbalances = true;
+            _ignoreZeroValues = true;
+            _daysLookBack = 20;
+            _lineTillTouch = true;
+            _lineWidth = 1;
+            _printLineForXBars = 1;
+
+            _showDivergence = true;
+            _showMinorDivergence = true;
+            _majorArrowSize = 15;
+            _minorArrowSize = 9;
+            _markInvalidatedDivergences = true;
+            _invalidationLookbackBars = 2;
+            _divergenceDaysLookBack = 20;
+            _maxDivergenceArrows = 100;
+
+            switch (profile)
+            {
+                case IndicatorProfile.Default: // NQ RTH
+                    _ticksGrouping = 12;
+                    _purpleThreshold = 150m;
+                    _orangeThreshold = 300m;
+                    _imbalanceRatio = 280m;
+                    _imbalanceRange = 2;
+                    _imbalanceVolume = 20m;
+                    _deltaPercentageThreshold = 10m;
+                    _minorDeltaPercentageThreshold = 2m;
+                    break;
+
+                case IndicatorProfile.Profile1: // NQ Overnight
+                    _ticksGrouping = 8;
+                    _purpleThreshold = 60m;
+                    _orangeThreshold = 120m;
+                    _imbalanceRatio = 300m;
+                    _imbalanceRange = 2;
+                    _imbalanceVolume = 8m;
+                    _deltaPercentageThreshold = 12m;
+                    _minorDeltaPercentageThreshold = 3m;
+                    break;
+
+                case IndicatorProfile.Profile2: // ES RTH
+                    _ticksGrouping = 4;
+                    _purpleThreshold = 300m;
+                    _orangeThreshold = 600m;
+                    _imbalanceRatio = 300m;
+                    _imbalanceRange = 3;
+                    _imbalanceVolume = 40m;
+                    _deltaPercentageThreshold = 8m;
+                    _minorDeltaPercentageThreshold = 2m;
+                    break;
+
+                case IndicatorProfile.Profile3: // ES Overnight
+                    _ticksGrouping = 4;
+                    _purpleThreshold = 100m;
+                    _orangeThreshold = 200m;
+                    _imbalanceRatio = 320m;
+                    _imbalanceRange = 2;
+                    _imbalanceVolume = 12m;
+                    _deltaPercentageThreshold = 10m;
+                    _minorDeltaPercentageThreshold = 2.5m;
+                    break;
+
+                default: // Custom slots start from a neutral footprint baseline.
+                    _ticksGrouping = 1;
+                    _purpleThreshold = 1000m;
+                    _orangeThreshold = 1500m;
+                    _imbalanceRatio = 300m;
+                    _imbalanceRange = 3;
+                    _imbalanceVolume = 30m;
+                    _deltaPercentageThreshold = 10m;
+                    _minorDeltaPercentageThreshold = 2.5m;
+                    break;
+            }
+
+            _isApplyingProfile = false;
         }
 
         // ----------------------------------------------------
@@ -1939,45 +2080,8 @@ namespace ATAS.Indicators.Custom
 
                 if (!File.Exists(filepath))
                 {
-                    _isApplyingProfile = true;
-                    _profileLabel = profile.ToString();
-                    ApplyDarkModeColors();
-                    _colorTheme = ColorThemeMode.DarkMode;
-                    _fontFamily = "Arial";
-                    _fontSize = 9;
-                    _ticksGrouping = 1;
-                    _minBarWidthForText = 35;
-                    _purpleThreshold = 1000m;
-                    _orangeThreshold = 1500m;
-                    _highlightPoc = true;
-                    _pocBorderWidth = 2;
-                    _drawGridLines = true;
-                    _showCandleInMiddle = true;
-                    _candleWidth = 6;
-                    _wickWidth = 1;
-                    _showRightProfile = true;
-                    _rightProfileWidth = 100;
-                    _showBottomStats = true;
-                    _showImbalances = true;
-                    _ignoreZeroValues = false;
-                    _imbalanceRatio = 300m;
-                    _imbalanceRange = 3;
-                    _imbalanceVolume = 30m;
-                    _daysLookBack = 20;
-                    _lineTillTouch = false;
-                    _lineWidth = 10;
-                    _printLineForXBars = 10;
-                    _showDivergence = true;
-                    _deltaPercentageThreshold = 10m;
-                    _showMinorDivergence = true;
-                    _minorDeltaPercentageThreshold = 2.5m;
-                    _majorArrowSize = 15;
-                    _minorArrowSize = 9;
-                    _markInvalidatedDivergences = true;
-                    _invalidationLookbackBars = 2;
-                    _divergenceDaysLookBack = 20;
-                    _maxDivergenceArrows = 100;
-                    _isApplyingProfile = false;
+                    ApplyBuiltInProfileDefaults(profile);
+                    SaveProfileSettings(profile);
                     return;
                 }
 
@@ -1997,7 +2101,9 @@ namespace ATAS.Indicators.Custom
                 _isApplyingProfile = true;
 
                 if (dict.TryGetValue("ProfileLabel", out string? profileLabel)) _profileLabel = profileLabel;
-                else _profileLabel = profile.ToString();
+                else _profileLabel = GetDefaultProfileLabel(profile);
+
+                _profileLabelsMap[profile] = _profileLabel;
 
                 if (dict.TryGetValue("ColorTheme", out string? colorThemeStr) && Enum.TryParse(colorThemeStr, out ColorThemeMode themeMode)) _colorTheme = themeMode;
 
