@@ -69,6 +69,16 @@ namespace ATAS.Indicators.Custom
             };
         }
 
+        private static (int Hour, int Minute) GetDefaultSessionReset(IndicatorProfile profile)
+        {
+            return profile switch
+            {
+                IndicatorProfile.Default or IndicatorProfile.Profile2 => (9, 30),
+                IndicatorProfile.Profile1 or IndicatorProfile.Profile3 => (18, 0),
+                _ => (0, 0)
+            };
+        }
+
         // ----------------------------------------------------
         // Grouped Price Level Helper Class
         // ----------------------------------------------------
@@ -152,6 +162,8 @@ namespace ATAS.Indicators.Custom
         private ColorThemeMode _colorTheme = ColorThemeMode.DarkMode;
         private string _profileLabel = "NQ RTH 09:30-16:00 ET";
         private bool _isApplyingProfile = false;
+        private int _sessionResetHour = 9;
+        private int _sessionResetMinute = 30;
 
         // ----------------------------------------------------
         // Backing Fields for Settings
@@ -214,7 +226,7 @@ namespace ATAS.Indicators.Custom
         private bool _showDivergence = true;
         private decimal _deltaPercentageThreshold = 10m;
         private bool _showMinorDivergence = true;
-        private decimal _minorDeltaPercentageThreshold = 2.5m;
+        private decimal _minorDeltaPercentageThreshold = 5m;
         private int _majorArrowSize = 15;
         private int _minorArrowSize = 9;
         private Color _bullishDivergenceColor = Color.FromArgb(255, 46, 204, 113);
@@ -352,6 +364,9 @@ namespace ATAS.Indicators.Custom
                     RecalculateValues();
                     RedrawChart();
 
+                    // Empty property name follows INotifyPropertyChanged convention:
+                    // refresh every value shown in the ATAS property grid after a preset switch.
+                    OnPropertyChanged(string.Empty);
                     OnPropertyChanged(nameof(ProfileLabel));
                     OnPropertyChanged(nameof(ActivePresetScope));
                     OnPropertyChanged(nameof(ActiveProfile));
@@ -383,6 +398,24 @@ namespace ATAS.Indicators.Custom
                     }
                 }
             }
+        }
+
+        [Display(Name = "4) CD Reset Hour (Chart Time)", GroupName = QuickSetupGroup, Order = 3,
+            Description = "Hour when cumulative delta starts a new session. Keep the ATAS chart time zone aligned with the preset (US Eastern).")]
+        [Range(0, 23)]
+        public int SessionResetHour
+        {
+            get => _sessionResetHour;
+            set { if (_sessionResetHour != value) { _sessionResetHour = value; if (!_isApplyingProfile) RecalculateValues(); } }
+        }
+
+        [Display(Name = "5) CD Reset Minute", GroupName = QuickSetupGroup, Order = 4,
+            Description = "Minute when cumulative delta starts a new session.")]
+        [Range(0, 59)]
+        public int SessionResetMinute
+        {
+            get => _sessionResetMinute;
+            set { if (_sessionResetMinute != value) { _sessionResetMinute = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
         // ----------------------------------------------------
@@ -426,6 +459,7 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "Font Size", GroupName = "02. THEME & FONT", Order = 20)]
+        [Range(6, 30)]
         public int FontSize
         {
             get => _fontSize;
@@ -442,17 +476,30 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "Min Width for Text", GroupName = "03. FOOTPRINT", Order = 26)]
+        [Range(10, 200)]
         public int MinBarWidthForText
         {
             get => _minBarWidthForText;
             set { if (_minBarWidthForText != value) { _minBarWidthForText = value; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "High Volume Threshold (Purple)", GroupName = "03. FOOTPRINT", Order = 30)]
+        [Display(Name = "High Volume Threshold (Purple)", GroupName = "03. FOOTPRINT", Order = 30,
+            Description = "Absolute contracts per grouped footprint row. This depends on bar type, timeframe, data feed, instrument and session; calibrate with your own sample.")]
+        [Range(typeof(decimal), "0", "1000000000")]
         public decimal PurpleThreshold
         {
             get => _purpleThreshold;
-            set { if (_purpleThreshold != value) { _purpleThreshold = value; if (!_isApplyingProfile) RedrawChart(); } }
+            set
+            {
+                if (_purpleThreshold == value) return;
+                _purpleThreshold = value;
+                if (_orangeThreshold < value)
+                {
+                    _orangeThreshold = value;
+                    OnPropertyChanged(nameof(OrangeThreshold));
+                }
+                if (!_isApplyingProfile) RedrawChart();
+            }
         }
 
         [Display(Name = "High Volume Color", GroupName = "03. FOOTPRINT", Order = 40)]
@@ -462,11 +509,19 @@ namespace ATAS.Indicators.Custom
             set { if (_purpleColor != value) { _purpleColor = value; _colorTheme = ColorThemeMode.Custom; if (!_isApplyingProfile) RedrawChart(); } }
         }
 
-        [Display(Name = "Extreme Volume Threshold (Orange)", GroupName = "03. FOOTPRINT", Order = 50)]
+        [Display(Name = "Extreme Volume Threshold (Orange)", GroupName = "03. FOOTPRINT", Order = 50,
+            Description = "Absolute contracts per grouped footprint row. Keep this above the purple threshold.")]
+        [Range(typeof(decimal), "0", "1000000000")]
         public decimal OrangeThreshold
         {
             get => _orangeThreshold;
-            set { if (_orangeThreshold != value) { _orangeThreshold = value; if (!_isApplyingProfile) RedrawChart(); } }
+            set
+            {
+                decimal normalized = Math.Max(value, _purpleThreshold);
+                if (_orangeThreshold == normalized) return;
+                _orangeThreshold = normalized;
+                if (!_isApplyingProfile) RedrawChart();
+            }
         }
 
         [Display(Name = "Extreme Volume Color", GroupName = "03. FOOTPRINT", Order = 60)]
@@ -533,6 +588,7 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "POC Border Width", GroupName = "04. POC & GRID", Order = 150)]
+        [Range(1, 10)]
         public int PocBorderWidth
         {
             get => _pocBorderWidth;
@@ -564,6 +620,7 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "Body Width", GroupName = "05. MIDDLE CANDLE", Order = 190)]
+        [Range(1, 30)]
         public int CandleWidth
         {
             get => _candleWidth;
@@ -571,6 +628,7 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "Wick Width", GroupName = "05. MIDDLE CANDLE", Order = 200)]
+        [Range(1, 10)]
         public int WickWidth
         {
             get => _wickWidth;
@@ -602,6 +660,7 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "Width (pixels)", GroupName = "06. RIGHT PROFILE", Order = 240)]
+        [Range(40, 500)]
         public int RightProfileWidth
         {
             get => _rightProfileWidth;
@@ -705,21 +764,27 @@ namespace ATAS.Indicators.Custom
             set { if (_ignoreZeroValues != value) { _ignoreZeroValues = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Ratio (%)", GroupName = "08. STACKED IMBALANCE", Order = 410)]
+        [Display(Name = "Ratio (%)", GroupName = "08. STACKED IMBALANCE", Order = 410,
+            Description = "Diagonal Ask/Bid comparison at adjacent raw tick levels. ATAS uses 150% by default; 300% is a conservative strong-imbalance baseline.")]
+        [Range(typeof(decimal), "100", "1000")]
         public decimal ImbalanceRatio
         {
             get => _imbalanceRatio;
             set { if (_imbalanceRatio != value) { _imbalanceRatio = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Consecutive Levels", GroupName = "08. STACKED IMBALANCE", Order = 420)]
+        [Display(Name = "Consecutive Raw-Tick Levels", GroupName = "08. STACKED IMBALANCE", Order = 420,
+            Description = "Number of adjacent one-tick imbalances required for a stack. Kept independent from footprint display grouping.")]
+        [Range(2, 10)]
         public int ImbalanceRange
         {
             get => _imbalanceRange;
             set { if (_imbalanceRange != value) { _imbalanceRange = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Minimum Volume", GroupName = "08. STACKED IMBALANCE", Order = 430)]
+        [Display(Name = "Minimum Volume per Raw Tick", GroupName = "08. STACKED IMBALANCE", Order = 430,
+            Description = "Rejects mathematically large ratios caused by tiny prints. This absolute filter requires instrument/session calibration.")]
+        [Range(typeof(decimal), "0", "1000000")]
         public decimal ImbalanceVolume
         {
             get => _imbalanceVolume;
@@ -727,6 +792,7 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "Days Look Back", GroupName = "08. STACKED IMBALANCE", Order = 440)]
+        [Range(1, 365)]
         public int DaysLookBack
         {
             get => _daysLookBack;
@@ -736,7 +802,8 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Stacked Imbalance Drawing Settings
         // ----------------------------------------------------
-        [Display(Name = "Line Till Touch", GroupName = "08. STACKED IMBALANCE", Order = 450)]
+        [Display(Name = "Line Till Touch", GroupName = "08. STACKED IMBALANCE", Order = 450,
+            Description = "Extends the level until a later candle touches it, then preserves the historical line up to that touch.")]
         public bool LineTillTouch
         {
             get => _lineTillTouch;
@@ -758,6 +825,7 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "Line Width", GroupName = "08. STACKED IMBALANCE", Order = 480)]
+        [Range(1, 20)]
         public int LineWidth
         {
             get => _lineWidth;
@@ -765,6 +833,7 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "Maximum Line Bars", GroupName = "08. STACKED IMBALANCE", Order = 490)]
+        [Range(1, 1000)]
         public int PrintLineForXBars
         {
             get => _printLineForXBars;
@@ -774,35 +843,57 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Delta Divergence Settings
         // ----------------------------------------------------
-        [Display(Name = "Show Major Divergence", GroupName = "09. DELTA DIVERGENCE", Order = 500)]
+        [Display(Name = "Show Major Absorption", GroupName = "09. DELTA DIVERGENCE", Order = 500,
+            Description = "Contrarian footprint pattern: an up candle with negative delta, or a down candle with positive delta. Use as context, not a standalone entry.")]
         public bool ShowDivergence
         {
             get => _showDivergence;
             set { if (_showDivergence != value) { _showDivergence = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Major Threshold (%)", GroupName = "09. DELTA DIVERGENCE", Order = 510)]
+        [Display(Name = "Major |Delta| / Volume (%)", GroupName = "09. DELTA DIVERGENCE", Order = 510,
+            Description = "Normalized executed-volume filter. Ten percent is a conservative baseline, not a universally backtested optimum.")]
+        [Range(typeof(decimal), "0", "100")]
         public decimal DeltaPercentageThreshold
         {
             get => _deltaPercentageThreshold;
-            set { if (_deltaPercentageThreshold != value) { _deltaPercentageThreshold = value; if (!_isApplyingProfile) RecalculateValues(); } }
+            set
+            {
+                if (_deltaPercentageThreshold == value) return;
+                _deltaPercentageThreshold = value;
+                if (_minorDeltaPercentageThreshold > value)
+                {
+                    _minorDeltaPercentageThreshold = value;
+                    OnPropertyChanged(nameof(MinorDeltaPercentageThreshold));
+                }
+                if (!_isApplyingProfile) RecalculateValues();
+            }
         }
 
-        [Display(Name = "Show Minor Divergence", GroupName = "09. DELTA DIVERGENCE", Order = 512)]
+        [Display(Name = "Show Minor Absorption", GroupName = "09. DELTA DIVERGENCE", Order = 512)]
         public bool ShowMinorDivergence
         {
             get => _showMinorDivergence;
             set { if (_showMinorDivergence != value) { _showMinorDivergence = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "Minor Threshold (%)", GroupName = "09. DELTA DIVERGENCE", Order = 514)]
+        [Display(Name = "Minor |Delta| / Volume (%)", GroupName = "09. DELTA DIVERGENCE", Order = 514,
+            Description = "Five percent reduces low-information sign mismatches while retaining early absorption candidates.")]
+        [Range(typeof(decimal), "0", "100")]
         public decimal MinorDeltaPercentageThreshold
         {
             get => _minorDeltaPercentageThreshold;
-            set { if (_minorDeltaPercentageThreshold != value) { _minorDeltaPercentageThreshold = value; if (!_isApplyingProfile) RecalculateValues(); } }
+            set
+            {
+                decimal normalized = Math.Min(value, _deltaPercentageThreshold);
+                if (_minorDeltaPercentageThreshold == normalized) return;
+                _minorDeltaPercentageThreshold = normalized;
+                if (!_isApplyingProfile) RecalculateValues();
+            }
         }
 
         [Display(Name = "Major Arrow Size", GroupName = "09. DELTA DIVERGENCE", Order = 522)]
+        [Range(5, 50)]
         public int MajorArrowSize
         {
             get => _majorArrowSize;
@@ -810,6 +901,7 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "Minor Arrow Size", GroupName = "09. DELTA DIVERGENCE", Order = 524)]
+        [Range(5, 50)]
         public int MinorArrowSize
         {
             get => _minorArrowSize;
@@ -867,6 +959,7 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "Days Look Back", GroupName = "09. DELTA DIVERGENCE", Order = 545)]
+        [Range(1, 365)]
         public int DivergenceDaysLookBack
         {
             get => _divergenceDaysLookBack;
@@ -874,6 +967,7 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "Maximum Arrows", GroupName = "09. DELTA DIVERGENCE", Order = 550)]
+        [Range(1, 5000)]
         public int MaxDivergenceArrows
         {
             get => _maxDivergenceArrows;
@@ -995,50 +1089,60 @@ namespace ATAS.Indicators.Custom
             switch (profile)
             {
                 case IndicatorProfile.Default: // NQ RTH
+                    _sessionResetHour = 9;
+                    _sessionResetMinute = 30;
                     _ticksGrouping = 12;
                     _purpleThreshold = 150m;
                     _orangeThreshold = 300m;
-                    _imbalanceRatio = 280m;
-                    _imbalanceRange = 2;
+                    _imbalanceRatio = 300m;
+                    _imbalanceRange = 3;
                     _imbalanceVolume = 20m;
                     _deltaPercentageThreshold = 10m;
-                    _minorDeltaPercentageThreshold = 2m;
+                    _minorDeltaPercentageThreshold = 5m;
                     break;
 
                 case IndicatorProfile.Profile1: // NQ Overnight
+                    _sessionResetHour = 18;
+                    _sessionResetMinute = 0;
                     _ticksGrouping = 8;
                     _purpleThreshold = 60m;
                     _orangeThreshold = 120m;
                     _imbalanceRatio = 300m;
-                    _imbalanceRange = 2;
+                    _imbalanceRange = 3;
                     _imbalanceVolume = 8m;
-                    _deltaPercentageThreshold = 12m;
-                    _minorDeltaPercentageThreshold = 3m;
+                    _deltaPercentageThreshold = 10m;
+                    _minorDeltaPercentageThreshold = 5m;
                     break;
 
                 case IndicatorProfile.Profile2: // ES RTH
+                    _sessionResetHour = 9;
+                    _sessionResetMinute = 30;
                     _ticksGrouping = 4;
                     _purpleThreshold = 300m;
                     _orangeThreshold = 600m;
                     _imbalanceRatio = 300m;
                     _imbalanceRange = 3;
                     _imbalanceVolume = 40m;
-                    _deltaPercentageThreshold = 8m;
-                    _minorDeltaPercentageThreshold = 2m;
+                    _deltaPercentageThreshold = 10m;
+                    _minorDeltaPercentageThreshold = 5m;
                     break;
 
                 case IndicatorProfile.Profile3: // ES Overnight
+                    _sessionResetHour = 18;
+                    _sessionResetMinute = 0;
                     _ticksGrouping = 4;
                     _purpleThreshold = 100m;
                     _orangeThreshold = 200m;
-                    _imbalanceRatio = 320m;
-                    _imbalanceRange = 2;
+                    _imbalanceRatio = 300m;
+                    _imbalanceRange = 3;
                     _imbalanceVolume = 12m;
                     _deltaPercentageThreshold = 10m;
-                    _minorDeltaPercentageThreshold = 2.5m;
+                    _minorDeltaPercentageThreshold = 5m;
                     break;
 
                 default: // Custom slots start from a neutral footprint baseline.
+                    _sessionResetHour = 0;
+                    _sessionResetMinute = 0;
                     _ticksGrouping = 1;
                     _purpleThreshold = 1000m;
                     _orangeThreshold = 1500m;
@@ -1046,7 +1150,7 @@ namespace ATAS.Indicators.Custom
                     _imbalanceRange = 3;
                     _imbalanceVolume = 30m;
                     _deltaPercentageThreshold = 10m;
-                    _minorDeltaPercentageThreshold = 2.5m;
+                    _minorDeltaPercentageThreshold = 5m;
                     break;
             }
 
@@ -1084,6 +1188,14 @@ namespace ATAS.Indicators.Custom
             base.OnDispose();
         }
 
+        private DateTime GetSessionDate(DateTime candleTime)
+        {
+            var resetTime = new TimeSpan(SessionResetHour, SessionResetMinute, 0);
+            return candleTime.TimeOfDay >= resetTime
+                ? candleTime.Date
+                : candleTime.Date.AddDays(-1);
+        }
+
         // ----------------------------------------------------
         // OnCalculate - Entry Point for Daily CD, Imbalances, & Divergences
         // ----------------------------------------------------
@@ -1104,9 +1216,9 @@ namespace ATAS.Indicators.Custom
             else
             {
                 var prevCandle = GetCandle(bar - 1);
-                if (prevCandle == null || candle.Time.Date != prevCandle.Time.Date)
+                if (prevCandle == null || GetSessionDate(candle.Time) != GetSessionDate(prevCandle.Time))
                 {
-                    // Reset cumulative delta on a new day
+                    // Reset cumulative delta at the active profile's session boundary.
                     _cdDayCache[bar] = currentDelta;
                 }
                 else
@@ -1168,7 +1280,9 @@ namespace ATAS.Indicators.Custom
             var candle = GetCandle(bar);
             if (candle == null) return;
 
-            var levels = GetGroupedPriceLevels(candle).OrderByDescending(l => l.Price).ToList();
+            // ATAS defines diagonal imbalance between adjacent raw price levels.
+            // Footprint display grouping must not widen the comparison distance.
+            var levels = GetGroupedPriceLevels(candle, 1);
             int n = levels.Count;
             if (n < ImbalanceRange) return;
 
@@ -1646,13 +1760,10 @@ namespace ATAS.Indicators.Custom
             {
                 foreach (var line in _imbalanceLines)
                 {
-                    // If Line till touch is enabled and the line has been touched (mitigated), don't draw it
-                    if (LineTillTouch && line.IsMitigated)
-                        continue;
-
                     int endBar = CurrentBar - 1;
                     if (line.IsMitigated)
                     {
+                        // Preserve the historical level and stop it at the first touch.
                         endBar = line.MitigatedBar;
                     }
 
@@ -1866,9 +1977,14 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         private List<GroupedPriceLevel> GetGroupedPriceLevels(IndicatorCandle candle)
         {
+            return GetGroupedPriceLevels(candle, TicksGrouping);
+        }
+
+        private List<GroupedPriceLevel> GetGroupedPriceLevels(IndicatorCandle candle, int ticksGrouping)
+        {
             var rawLevels = candle.GetAllPriceLevels();
-            
-            decimal groupSize = this.InstrumentInfo!.TickSize * TicksGrouping;
+
+            decimal groupSize = this.InstrumentInfo!.TickSize * Math.Max(1, ticksGrouping);
 
             // Group the High and Low of the candle to align on the grid
             decimal lowGrouped = Math.Floor(candle.Low / groupSize) * groupSize;
@@ -1993,6 +2109,8 @@ namespace ATAS.Indicators.Custom
                 var lines = new List<string>
                 {
                     $"ProfileLabel={ProfileLabel}",
+                    $"SessionResetHour={SessionResetHour}",
+                    $"SessionResetMinute={SessionResetMinute}",
                     $"ColorTheme={ColorTheme}",
                     $"FontFamily={FontFamily}",
                     $"FontSize={FontSize}",
@@ -2100,10 +2218,17 @@ namespace ATAS.Indicators.Custom
 
                 _isApplyingProfile = true;
 
+                var defaultSessionReset = GetDefaultSessionReset(profile);
+                _sessionResetHour = defaultSessionReset.Hour;
+                _sessionResetMinute = defaultSessionReset.Minute;
+
                 if (dict.TryGetValue("ProfileLabel", out string? profileLabel)) _profileLabel = profileLabel;
                 else _profileLabel = GetDefaultProfileLabel(profile);
 
                 _profileLabelsMap[profile] = _profileLabel;
+
+                if (dict.TryGetValue("SessionResetHour", out string? resetHourStr) && int.TryParse(resetHourStr, out int resetHour)) _sessionResetHour = Math.Clamp(resetHour, 0, 23);
+                if (dict.TryGetValue("SessionResetMinute", out string? resetMinuteStr) && int.TryParse(resetMinuteStr, out int resetMinute)) _sessionResetMinute = Math.Clamp(resetMinute, 0, 59);
 
                 if (dict.TryGetValue("ColorTheme", out string? colorThemeStr) && Enum.TryParse(colorThemeStr, out ColorThemeMode themeMode)) _colorTheme = themeMode;
 
@@ -2175,6 +2300,11 @@ namespace ATAS.Indicators.Custom
                 if (dict.TryGetValue("InvalidatedArrowColor", out string? invalidatedArrowColorStr) && int.TryParse(invalidatedArrowColorStr, out int invalidatedArrowColorArgb)) _invalidatedArrowColor = Color.FromArgb(invalidatedArrowColorArgb);
                 if (dict.TryGetValue("DivergenceDaysLookBack", out string? divergenceDaysLookBackStr) && int.TryParse(divergenceDaysLookBackStr, out int divergenceDaysLookBack)) _divergenceDaysLookBack = divergenceDaysLookBack;
                 if (dict.TryGetValue("MaxDivergenceArrows", out string? maxDivergenceArrowsStr) && int.TryParse(maxDivergenceArrowsStr, out int maxDivergenceArrows)) _maxDivergenceArrows = maxDivergenceArrows;
+
+                // Preserve semantic ordering even when an older or hand-edited
+                // profile contains inconsistent threshold values.
+                if (_orangeThreshold < _purpleThreshold) _orangeThreshold = _purpleThreshold;
+                if (_minorDeltaPercentageThreshold > _deltaPercentageThreshold) _minorDeltaPercentageThreshold = _deltaPercentageThreshold;
 
                 _isApplyingProfile = false;
             }

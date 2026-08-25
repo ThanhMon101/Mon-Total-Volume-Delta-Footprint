@@ -56,16 +56,29 @@ Chỉ báo Custom Footprint cao cấp dành cho nền tảng giao dịch **ATAS 
 
       | Profile | Ticks grouping | Volume tím / cam | Imbalance (ratio / range / min vol) | Delta major / minor |
       |---|---:|---:|---:|---:|
-      | NQ RTH 09:30-16:00 ET | 12 | 150 / 300 | 280% / 2 / 20 | 10% / 2% |
-      | NQ Overnight 18:00-09:30 ET | 8 | 60 / 120 | 300% / 2 / 8 | 12% / 3% |
-      | ES RTH 09:30-16:00 ET | 4 | 300 / 600 | 300% / 3 / 40 | 8% / 2% |
-      | ES Overnight 18:00-09:30 ET | 4 | 100 / 200 | 320% / 2 / 12 | 10% / 2.5% |
+      | NQ RTH 09:30-16:00 ET | 12 | 150 / 300 | 300% / 3 / 20 | 10% / 5% |
+      | NQ Overnight 18:00-09:30 ET | 8 | 60 / 120 | 300% / 3 / 8 | 10% / 5% |
+      | ES RTH 09:30-16:00 ET | 4 | 300 / 600 | 300% / 3 / 40 | 10% / 5% |
+      | ES Overnight 18:00-09:30 ET | 4 | 100 / 200 | 300% / 3 / 12 | 10% / 5% |
 
     - Hai slot còn lại là `Custom 1` và `Custom 2` để tự tinh chỉnh.
     - Các khung giờ trên dùng múi giờ **US Eastern (ET)**; hãy chọn chart/session template tương ứng trong ATAS.
+    - `CD Day` reset theo đầu phiên của profile (09:30 ET cho RTH, 18:00 ET cho Overnight), thay vì reset cứng lúc 00:00.
     - Đổi tên trực tiếp tại ô `Profile Rename / Label`, tự động cập nhật ngay trên danh sách chọn `Active Profile` theo thời gian thực.
     - Lưu trữ vĩnh viễn cấu hình vào file `.cfg` trên máy.
     - Settings được gom thành 9 nhóm đánh số (Quick Setup, Theme, Footprint, POC, Middle Candle, Right Profile, Bottom Statistics, Stacked Imbalance, Delta Divergence) để tìm tham số nhanh hơn.
+
+## Cơ sở hiệu chỉnh và giới hạn
+
+- Stacked Imbalance luôn được tính giữa **hai mức giá raw liền kề (1 tick)**, độc lập với `Ticks Grouping` dùng để hiển thị footprint. Cách này khớp với định nghĩa diagonal Bid/Ask của ATAS.
+- `300%` và 3 mức liên tiếp là baseline bảo thủ để lọc stacked imbalance mạnh. ATAS mặc định imbalance đơn là 150%, đồng thời dùng 300% trong ví dụ thực hành; đây không phải ngưỡng tối ưu cho mọi data feed.
+- `|Delta| / Volume` dùng 10% (Major) và 5% (Minor) để tránh tín hiệu sign mismatch quá nhỏ. Đây là heuristic thực dụng, không phải ngưỡng đã được chứng minh phổ quát.
+- Các ngưỡng Volume tím/cam và Minimum Volume là số hợp đồng tuyệt đối nên phụ thuộc bar type, timeframe, kỳ hạn hợp đồng, session và data feed. Cần walk-forward/backtest trên dữ liệu tick ATAS của chính chart đang dùng trước khi xem là thông số tối ưu.
+- Tài liệu tham khảo:
+  - ATAS Footprint Settings: https://help.atas.net/en/support/solutions/articles/72000606631
+  - ATAS Imbalance guide: https://atas.net/blog/imbalance-trade-on-the-side-of-superior-forces/
+  - Cont, Kukanov & Stoikov, *The Price Impact of Order Book Events*: https://arxiv.org/abs/1011.6402
+  - Takahashi, *Interaction Between Asset Returns and Order Flow Imbalances* (E-mini S&P 500): https://doi.org/10.24677/riim.19.0_23
 
 ---
 
