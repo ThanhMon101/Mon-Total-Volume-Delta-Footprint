@@ -53,7 +53,7 @@ Chỉ báo Custom Footprint cao cấp dành cho nền tảng giao dịch **ATAS 
 
 10. **Hệ Thống Quản Lý Profiles Đa Năng:**
     - Nhóm `01. QUICK SETUP` chỉ giữ 3 dòng cần thiết: chọn Market/Session, xem giờ phiên và xem trạng thái validation.
-    - Dropdown `1) Market / Session` chỉ hiển thị đúng 4 preset cố định để không thể nhầm instrument hoặc session:
+    - `1) Profile` dùng dropdown enum native của ATAS: chỉ có thể chọn, không thể nhập text. Dropdown chỉ hiển thị đúng 4 preset cố định để không thể nhầm instrument hoặc session:
 
       | Profile | Ticks grouping | Volume tím / cam | Imbalance (ratio / range / min vol) | Delta major / minor |
       |---|---:|---:|---:|---:|

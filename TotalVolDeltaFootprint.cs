@@ -31,6 +31,24 @@ namespace ATAS.Indicators.Custom
             Profile5
         }
 
+        // A dedicated four-value enum makes ATAS render Quick Setup as a
+        // native, non-editable dropdown. IndicatorProfile remains unchanged
+        // internally so existing profile files and saved charts stay compatible.
+        public enum QuickTradingProfile
+        {
+            [Display(Name = "NQ | RTH | 09:30-16:00 ET")]
+            NQ_RTH,
+
+            [Display(Name = "NQ | ETH | 18:00-09:30 ET")]
+            NQ_ETH,
+
+            [Display(Name = "ES | RTH | 09:30-16:00 ET")]
+            ES_RTH,
+
+            [Display(Name = "ES | ETH | 18:00-09:30 ET")]
+            ES_ETH
+        }
+
         // ----------------------------------------------------
         // Color Theme Enum (Dark Mode / Light Mode / Custom)
         // ----------------------------------------------------
@@ -71,6 +89,29 @@ namespace ATAS.Indicators.Custom
 
         private static bool IsBuiltInTradingProfile(IndicatorProfile profile)
             => profile >= IndicatorProfile.Default && profile <= IndicatorProfile.Profile3;
+
+        private static IndicatorProfile ToIndicatorProfile(QuickTradingProfile profile)
+        {
+            return profile switch
+            {
+                QuickTradingProfile.NQ_RTH => IndicatorProfile.Default,
+                QuickTradingProfile.NQ_ETH => IndicatorProfile.Profile1,
+                QuickTradingProfile.ES_RTH => IndicatorProfile.Profile2,
+                QuickTradingProfile.ES_ETH => IndicatorProfile.Profile3,
+                _ => IndicatorProfile.Default
+            };
+        }
+
+        private static QuickTradingProfile ToQuickTradingProfile(IndicatorProfile profile)
+        {
+            return profile switch
+            {
+                IndicatorProfile.Profile1 => QuickTradingProfile.NQ_ETH,
+                IndicatorProfile.Profile2 => QuickTradingProfile.ES_RTH,
+                IndicatorProfile.Profile3 => QuickTradingProfile.ES_ETH,
+                _ => QuickTradingProfile.NQ_RTH
+            };
+        }
 
         private static string GetCalibrationStatus(IndicatorProfile profile)
         {
@@ -371,38 +412,48 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Profile Management Settings
         // ----------------------------------------------------
-        [TypeConverter(typeof(ProfileNameConverter))]
-        [Display(Name = "1) Market / Session", GroupName = QuickSetupGroup, Order = 0,
-            Description = "Select one of four fixed NQ/ES presets. The profile loads immediately and saves its own settings automatically.")]
+        private void SelectProfile(IndicatorProfile targetProfile)
+        {
+            if (_activeProfile != targetProfile && !_isApplyingProfile)
+            {
+                // Save settings of current active profile before switching
+                SaveProfileSettings(_activeProfile);
+
+                _activeProfile = targetProfile;
+
+                // Load settings of the new profile
+                LoadProfileSettings(_activeProfile);
+
+                // Re-calculate and redraw chart to apply
+                RecalculateValues();
+                RedrawChart();
+
+                // Empty property name follows INotifyPropertyChanged convention:
+                // refresh every value shown in the ATAS property grid after a preset switch.
+                OnPropertyChanged(string.Empty);
+                OnPropertyChanged(nameof(ProfileLabel));
+                OnPropertyChanged(nameof(ActivePresetScope));
+                OnPropertyChanged(nameof(ActiveCalibrationStatus));
+                OnPropertyChanged(nameof(QuickProfile));
+                OnPropertyChanged(nameof(ActiveProfile));
+            }
+        }
+
+        [Display(Name = "1) Profile", GroupName = QuickSetupGroup, Order = 0,
+            Description = "Choose one of four fixed NQ/ES presets from the dropdown. Typing custom text is disabled.")]
+        public QuickTradingProfile QuickProfile
+        {
+            get => ToQuickTradingProfile(_activeProfile);
+            set => SelectProfile(ToIndicatorProfile(value));
+        }
+
+        // Retained only to migrate saved workspaces from the former text-based
+        // selector. It is deliberately hidden from the ATAS settings panel.
+        [Browsable(false)]
         public string ActiveProfile
         {
             get => GetDisplayNameForProfile(_activeProfile);
-            set
-            {
-                var targetProfile = ParseProfileFromDisplayName(value);
-                if (_activeProfile != targetProfile && !_isApplyingProfile)
-                {
-                    // Save settings of current active profile before switching
-                    SaveProfileSettings(_activeProfile);
-
-                    _activeProfile = targetProfile;
-
-                    // Load settings of the new profile
-                    LoadProfileSettings(_activeProfile);
-
-                    // Re-calculate and redraw chart to apply
-                    RecalculateValues();
-                    RedrawChart();
-
-                    // Empty property name follows INotifyPropertyChanged convention:
-                    // refresh every value shown in the ATAS property grid after a preset switch.
-                    OnPropertyChanged(string.Empty);
-                    OnPropertyChanged(nameof(ProfileLabel));
-                    OnPropertyChanged(nameof(ActivePresetScope));
-                    OnPropertyChanged(nameof(ActiveCalibrationStatus));
-                    OnPropertyChanged(nameof(ActiveProfile));
-                }
-            }
+            set => SelectProfile(ParseProfileFromDisplayName(value));
         }
 
         [ReadOnly(true)]
