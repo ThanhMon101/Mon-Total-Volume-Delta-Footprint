@@ -47,10 +47,10 @@ namespace ATAS.Indicators.Custom
         {
             return profile switch
             {
-                IndicatorProfile.Default => "NQ RTH 09:30-16:00 ET",
-                IndicatorProfile.Profile1 => "NQ Overnight 18:00-09:30 ET",
-                IndicatorProfile.Profile2 => "ES RTH 09:30-16:00 ET",
-                IndicatorProfile.Profile3 => "ES Overnight 18:00-09:30 ET",
+                IndicatorProfile.Default => "NQ | RTH | 09:30-16:00 ET",
+                IndicatorProfile.Profile1 => "NQ | ETH | 18:00-09:30 ET",
+                IndicatorProfile.Profile2 => "ES | RTH | 09:30-16:00 ET",
+                IndicatorProfile.Profile3 => "ES | ETH | 18:00-09:30 ET",
                 IndicatorProfile.Profile4 => "Custom 1",
                 IndicatorProfile.Profile5 => "Custom 2",
                 _ => profile.ToString()
@@ -62,10 +62,25 @@ namespace ATAS.Indicators.Custom
             return profile switch
             {
                 IndicatorProfile.Default => "NQ | Regular session | 09:30-16:00 US Eastern",
-                IndicatorProfile.Profile1 => "NQ | Overnight session | 18:00-09:30 US Eastern",
+                IndicatorProfile.Profile1 => "NQ | ETH | 18:00-09:30 US Eastern",
                 IndicatorProfile.Profile2 => "ES | Regular session | 09:30-16:00 US Eastern",
-                IndicatorProfile.Profile3 => "ES | Overnight session | 18:00-09:30 US Eastern",
+                IndicatorProfile.Profile3 => "ES | ETH | 18:00-09:30 US Eastern",
                 _ => "User-defined profile"
+            };
+        }
+
+        private static bool IsBuiltInTradingProfile(IndicatorProfile profile)
+            => profile >= IndicatorProfile.Default && profile <= IndicatorProfile.Profile3;
+
+        private static string GetCalibrationStatus(IndicatorProfile profile)
+        {
+            return profile switch
+            {
+                IndicatorProfile.Default => "USER-TUNED BASELINE | Primary preset",
+                IndicatorProfile.Profile1 => "RECOMMENDED BASELINE | Paper-test ETH first",
+                IndicatorProfile.Profile2 => "RECOMMENDED BASELINE | Backtest ES first",
+                IndicatorProfile.Profile3 => "RECOMMENDED BASELINE | Paper-test ETH first",
+                _ => "USER-DEFINED"
             };
         }
 
@@ -160,7 +175,7 @@ namespace ATAS.Indicators.Custom
         // Profile & Theme State Management
         private IndicatorProfile _activeProfile = IndicatorProfile.Default;
         private ColorThemeMode _colorTheme = ColorThemeMode.DarkMode;
-        private string _profileLabel = "NQ RTH 09:30-16:00 ET";
+        private string _profileLabel = "NQ | RTH | 09:30-16:00 ET";
         private bool _isApplyingProfile = false;
         private int _sessionResetHour = 9;
         private int _sessionResetMinute = 30;
@@ -268,6 +283,11 @@ namespace ATAS.Indicators.Custom
                     string defaultLabel = GetDefaultProfileLabel(p);
                     _profileLabelsMap[p] = defaultLabel;
 
+                    // The four trading presets use fixed names so the market and
+                    // session can never become ambiguous in Quick Setup.
+                    if (IsBuiltInTradingProfile(p))
+                        continue;
+
                     string filepath = Path.Combine(folder, $"TotalVolDeltaFootprint_{p}.cfg");
                     if (File.Exists(filepath))
                     {
@@ -297,8 +317,9 @@ namespace ATAS.Indicators.Custom
         {
             RefreshProfileLabelsFromDisk();
             var list = new List<string>();
-            foreach (IndicatorProfile p in Enum.GetValues(typeof(IndicatorProfile)))
+            for (int slot = (int)IndicatorProfile.Default; slot <= (int)IndicatorProfile.Profile3; slot++)
             {
+                var p = (IndicatorProfile)slot;
                 list.Add(GetDisplayNameForProfile(p));
             }
             return list;
@@ -306,6 +327,12 @@ namespace ATAS.Indicators.Custom
 
         public static string GetDisplayNameForProfile(IndicatorProfile profile)
         {
+            if (IsBuiltInTradingProfile(profile))
+            {
+                int fixedSlot = (int)profile + 1;
+                return $"{fixedSlot}. {GetDefaultProfileLabel(profile)}";
+            }
+
             if (!_profileLabelsMap.TryGetValue(profile, out string? label) || string.IsNullOrEmpty(label))
             {
                 label = GetDefaultProfileLabel(profile);
@@ -321,7 +348,7 @@ namespace ATAS.Indicators.Custom
 
             if (displayName.Length >= 2 && char.IsDigit(displayName[0]) && displayName[1] == '.')
             {
-                if (int.TryParse(displayName[0].ToString(), out int slot) && slot >= 1 && slot <= 6)
+                if (int.TryParse(displayName[0].ToString(), out int slot) && slot >= 1 && slot <= 4)
                 {
                     return (IndicatorProfile)(slot - 1);
                 }
@@ -329,6 +356,9 @@ namespace ATAS.Indicators.Custom
 
             foreach (var kvp in _profileLabelsMap)
             {
+                if (!IsBuiltInTradingProfile(kvp.Key))
+                    continue;
+
                 if (GetDisplayNameForProfile(kvp.Key) == displayName || kvp.Value == displayName || kvp.Key.ToString() == displayName)
                 {
                     return kvp.Key;
@@ -342,8 +372,8 @@ namespace ATAS.Indicators.Custom
         // Profile Management Settings
         // ----------------------------------------------------
         [TypeConverter(typeof(ProfileNameConverter))]
-        [Display(Name = "1) Trading Profile", GroupName = QuickSetupGroup, Order = 0,
-            Description = "Switch instantly between the four optimized NQ/ES session presets. Changes made inside a profile are saved automatically.")]
+        [Display(Name = "1) Market / Session", GroupName = QuickSetupGroup, Order = 0,
+            Description = "Select one of four fixed NQ/ES presets. The profile loads immediately and saves its own settings automatically.")]
         public string ActiveProfile
         {
             get => GetDisplayNameForProfile(_activeProfile);
@@ -369,27 +399,36 @@ namespace ATAS.Indicators.Custom
                     OnPropertyChanged(string.Empty);
                     OnPropertyChanged(nameof(ProfileLabel));
                     OnPropertyChanged(nameof(ActivePresetScope));
+                    OnPropertyChanged(nameof(ActiveCalibrationStatus));
                     OnPropertyChanged(nameof(ActiveProfile));
                 }
             }
         }
 
         [ReadOnly(true)]
-        [Display(Name = "2) Preset Scope", GroupName = QuickSetupGroup, Order = 1,
-            Description = "Reference session only. Set the ATAS chart/session template to the matching US Eastern hours.")]
+        [Display(Name = "2) Active Session", GroupName = QuickSetupGroup, Order = 1,
+            Description = "Set the ATAS chart time zone/session template to the same US Eastern hours.")]
         public string ActivePresetScope => GetProfileScope(_activeProfile);
 
-        [Display(Name = "3) Rename Profile (optional)", GroupName = QuickSetupGroup, Order = 2,
-            Description = "Optional custom label. The profile slot and its optimized parameters remain unchanged.")]
+        [ReadOnly(true)]
+        [Display(Name = "3) Validation Status", GroupName = QuickSetupGroup, Order = 2,
+            Description = "USER-TUNED means the current NQ RTH baseline is retained. RECOMMENDED BASELINE means paper-test and walk-forward validation are still required.")]
+        public string ActiveCalibrationStatus => GetCalibrationStatus(_activeProfile);
+
+        [Browsable(false)]
         public string ProfileLabel
         {
             get => _profileLabel;
             set
             {
-                if (_profileLabel != value)
+                string normalized = IsBuiltInTradingProfile(_activeProfile)
+                    ? GetDefaultProfileLabel(_activeProfile)
+                    : value;
+
+                if (_profileLabel != normalized)
                 {
-                    _profileLabel = value;
-                    _profileLabelsMap[_activeProfile] = value;
+                    _profileLabel = normalized;
+                    _profileLabelsMap[_activeProfile] = normalized;
                     if (!_isApplyingProfile)
                     {
                         SaveProfileSettings(_activeProfile);
@@ -400,7 +439,7 @@ namespace ATAS.Indicators.Custom
             }
         }
 
-        [Display(Name = "4) CD Reset Hour (Chart Time)", GroupName = QuickSetupGroup, Order = 3,
+        [Display(Name = "CD Reset Hour (Chart Time)", GroupName = "10. ADVANCED SESSION", Order = 560,
             Description = "Hour when cumulative delta starts a new session. Keep the ATAS chart time zone aligned with the preset (US Eastern).")]
         [Range(0, 23)]
         public int SessionResetHour
@@ -409,7 +448,7 @@ namespace ATAS.Indicators.Custom
             set { if (_sessionResetHour != value) { _sessionResetHour = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "5) CD Reset Minute", GroupName = QuickSetupGroup, Order = 4,
+        [Display(Name = "CD Reset Minute", GroupName = "10. ADVANCED SESSION", Order = 570,
             Description = "Minute when cumulative delta starts a new session.")]
         [Range(0, 59)]
         public int SessionResetMinute
@@ -467,7 +506,7 @@ namespace ATAS.Indicators.Custom
         }
 
         [Display(Name = "Ticks Grouping", GroupName = "03. FOOTPRINT", Order = 25,
-            Description = "Number of price ticks combined into one footprint row. This is optimized per trading profile.")]
+            Description = "Number of price ticks combined into one footprint row. The value is saved independently for each market/session preset.")]
         [Range(1, 100)]
         public int TicksGrouping
         {
@@ -1090,14 +1129,14 @@ namespace ATAS.Indicators.Custom
                     _ticksGrouping = 12;
                     _purpleThreshold = 150m;
                     _orangeThreshold = 300m;
-                    _imbalanceRatio = 300m;
-                    _imbalanceRange = 3;
+                    _imbalanceRatio = 280m;
+                    _imbalanceRange = 2;
                     _imbalanceVolume = 20m;
                     _deltaPercentageThreshold = 10m;
                     _minorDeltaPercentageThreshold = 2m;
                     break;
 
-                case IndicatorProfile.Profile1: // NQ Overnight
+                case IndicatorProfile.Profile1: // NQ ETH
                     _sessionResetHour = 18;
                     _sessionResetMinute = 0;
                     _ticksGrouping = 8;
@@ -1123,7 +1162,7 @@ namespace ATAS.Indicators.Custom
                     _minorDeltaPercentageThreshold = 2m;
                     break;
 
-                case IndicatorProfile.Profile3: // ES Overnight
+                case IndicatorProfile.Profile3: // ES ETH
                     _sessionResetHour = 18;
                     _sessionResetMinute = 0;
                     _ticksGrouping = 4;
@@ -2221,8 +2260,12 @@ namespace ATAS.Indicators.Custom
                 _sessionResetHour = defaultSessionReset.Hour;
                 _sessionResetMinute = defaultSessionReset.Minute;
 
-                if (dict.TryGetValue("ProfileLabel", out string? profileLabel)) _profileLabel = profileLabel;
-                else _profileLabel = GetDefaultProfileLabel(profile);
+                if (IsBuiltInTradingProfile(profile))
+                    _profileLabel = GetDefaultProfileLabel(profile);
+                else if (dict.TryGetValue("ProfileLabel", out string? profileLabel))
+                    _profileLabel = profileLabel;
+                else
+                    _profileLabel = GetDefaultProfileLabel(profile);
 
                 _profileLabelsMap[profile] = _profileLabel;
 
