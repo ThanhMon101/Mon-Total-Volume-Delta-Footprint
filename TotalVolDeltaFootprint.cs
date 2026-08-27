@@ -278,6 +278,7 @@ namespace ATAS.Indicators.Custom
         private IndicatorProfile _activeProfile = IndicatorProfile.Default;
         private TradingMarket _selectedMarket = TradingMarket.NQ;
         private ProfileEditSession _profileEditSession = ProfileEditSession.RTH;
+        private const string AppearanceOwnerFileName = "TotalVolDeltaFootprint_AppearanceOwner.cfg";
         private ColorThemeMode _colorTheme = ColorThemeMode.DarkMode;
         private string _profileLabel = "NQ | RTH | 09:30-16:00 ET";
         private bool _isApplyingProfile = false;
@@ -488,7 +489,9 @@ namespace ATAS.Indicators.Custom
             _selectedMarket = market;
             _profileEditSession = editSession;
             _activeProfile = targetProfile;
-            LoadProfileSettings(_activeProfile);
+            // Session switching must never replace the chart-wide appearance.
+            // Only the quantitative/runtime values are loaded from the target.
+            LoadProfileSettings(_activeProfile, loadAppearance: false);
 
             RecalculateValues();
             RedrawChart();
@@ -1536,8 +1539,16 @@ namespace ATAS.Indicators.Custom
             // Refresh profile display names from saved files
             RefreshProfileLabelsFromDisk();
 
-            // Load settings of Default profile on startup if it exists
-            LoadProfileSettings(IndicatorProfile.Default);
+            // Restore the most recently edited chart appearance first, then load
+            // NQ RTH's session values without replacing that appearance.
+            var appearanceOwner = LoadAppearanceOwner();
+            LoadProfileSettings(appearanceOwner, loadAppearance: true);
+            if (appearanceOwner != IndicatorProfile.Default)
+                LoadProfileSettings(IndicatorProfile.Default, loadAppearance: false);
+
+            _activeProfile = IndicatorProfile.Default;
+            _selectedMarket = TradingMarket.NQ;
+            _profileEditSession = ProfileEditSession.RTH;
         }
 
         // ----------------------------------------------------
@@ -2469,11 +2480,55 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Profile Management - Save Settings to Config File
         // ----------------------------------------------------
+        private static string GetProfilesFolder()
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ATAS", "Indicators", "Profiles");
+        }
+
+        private static IndicatorProfile LoadAppearanceOwner()
+        {
+            try
+            {
+                string filepath = Path.Combine(GetProfilesFolder(), AppearanceOwnerFileName);
+                if (File.Exists(filepath))
+                {
+                    string value = File.ReadAllText(filepath).Trim();
+                    if (Enum.TryParse(value, out IndicatorProfile profile) && IsBuiltInTradingProfile(profile))
+                        return profile;
+                }
+            }
+            catch
+            {
+                // Fall back to the first profile when the small pointer file is unavailable.
+            }
+
+            return IndicatorProfile.Default;
+        }
+
+        private static void SaveAppearanceOwner(IndicatorProfile profile)
+        {
+            try
+            {
+                if (!IsBuiltInTradingProfile(profile))
+                    return;
+
+                string folder = GetProfilesFolder();
+                if (!Directory.Exists(folder))
+                    Directory.CreateDirectory(folder);
+
+                File.WriteAllText(Path.Combine(folder, AppearanceOwnerFileName), profile.ToString());
+            }
+            catch
+            {
+                // Profile saving must remain non-fatal inside ATAS.
+            }
+        }
+
         private void SaveProfileSettings(IndicatorProfile profile)
         {
             try
             {
-                string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ATAS", "Indicators", "Profiles");
+                string folder = GetProfilesFolder();
                 if (!Directory.Exists(folder))
                     Directory.CreateDirectory(folder);
 
@@ -2553,6 +2608,11 @@ namespace ATAS.Indicators.Custom
 
                 File.WriteAllLines(filepath, lines);
                 _runtimeSettingsCache[profile] = CaptureRuntimeSettings();
+
+                // The active profile now contains the latest user-edited colors,
+                // visibility toggles and layout. Remember it for the next startup.
+                if (profile == _activeProfile)
+                    SaveAppearanceOwner(profile);
             }
             catch
             {
@@ -2563,11 +2623,11 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Profile Management - Load Settings from Config File
         // ----------------------------------------------------
-        private void LoadProfileSettings(IndicatorProfile profile)
+        private void LoadProfileSettings(IndicatorProfile profile, bool loadAppearance = true)
         {
             try
             {
-                string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ATAS", "Indicators", "Profiles");
+                string folder = GetProfilesFolder();
                 string filepath = Path.Combine(folder, $"TotalVolDeltaFootprint_{profile}.cfg");
 
                 if (!File.Exists(filepath))
@@ -2608,48 +2668,54 @@ namespace ATAS.Indicators.Custom
                 if (dict.TryGetValue("SessionResetHour", out string? resetHourStr) && int.TryParse(resetHourStr, out int resetHour)) _sessionResetHour = Math.Clamp(resetHour, 0, 23);
                 if (dict.TryGetValue("SessionResetMinute", out string? resetMinuteStr) && int.TryParse(resetMinuteStr, out int resetMinute)) _sessionResetMinute = Math.Clamp(resetMinute, 0, 59);
 
-                if (dict.TryGetValue("ColorTheme", out string? colorThemeStr) && Enum.TryParse(colorThemeStr, out ColorThemeMode themeMode)) _colorTheme = themeMode;
+                if (loadAppearance)
+                {
+                    if (dict.TryGetValue("ColorTheme", out string? colorThemeStr) && Enum.TryParse(colorThemeStr, out ColorThemeMode themeMode)) _colorTheme = themeMode;
+                    if (dict.TryGetValue("FontFamily", out string? fontFamily)) _fontFamily = fontFamily;
+                    if (dict.TryGetValue("FontSize", out string? fontSizeStr) && int.TryParse(fontSizeStr, out int fontSize)) _fontSize = fontSize;
+                    if (dict.TryGetValue("MinBarWidthForText", out string? minBarWidthForTextStr) && int.TryParse(minBarWidthForTextStr, out int minBarWidthForText)) _minBarWidthForText = minBarWidthForText;
+                }
 
-                if (dict.TryGetValue("FontFamily", out string? fontFamily)) _fontFamily = fontFamily;
-                if (dict.TryGetValue("FontSize", out string? fontSizeStr) && int.TryParse(fontSizeStr, out int fontSize)) _fontSize = fontSize;
                 if (dict.TryGetValue("TicksGrouping", out string? ticksGroupingStr) && int.TryParse(ticksGroupingStr, out int ticksGrouping)) _ticksGrouping = ticksGrouping;
-                if (dict.TryGetValue("MinBarWidthForText", out string? minBarWidthForTextStr) && int.TryParse(minBarWidthForTextStr, out int minBarWidthForText)) _minBarWidthForText = minBarWidthForText;
                 if (dict.TryGetValue("PurpleThreshold", out string? purpleThresholdStr) && decimal.TryParse(purpleThresholdStr, out decimal purpleThreshold)) _purpleThreshold = purpleThreshold;
-                if (dict.TryGetValue("PurpleColor", out string? purpleColorStr) && int.TryParse(purpleColorStr, out int purpleColorArgb)) _purpleColor = Color.FromArgb(purpleColorArgb);
                 if (dict.TryGetValue("OrangeThreshold", out string? orangeThresholdStr) && decimal.TryParse(orangeThresholdStr, out decimal orangeThreshold)) _orangeThreshold = orangeThreshold;
-                if (dict.TryGetValue("OrangeColor", out string? orangeColorStr) && int.TryParse(orangeColorStr, out int orangeColorArgb)) _orangeColor = Color.FromArgb(orangeColorArgb);
-                if (dict.TryGetValue("DefaultBgColor", out string? defaultBgColorStr) && int.TryParse(defaultBgColorStr, out int defaultBgColorArgb)) _defaultBgColor = Color.FromArgb(defaultBgColorArgb);
-                if (dict.TryGetValue("VolumeTextColor", out string? volumeTextColorStr) && int.TryParse(volumeTextColorStr, out int volumeTextColorArgb)) _volumeTextColor = Color.FromArgb(volumeTextColorArgb);
-                if (dict.TryGetValue("VolumeHighlightedTextColor", out string? volumeHighlightedTextColorStr) && int.TryParse(volumeHighlightedTextColorStr, out int volumeHighlightedTextColorArgb)) _volumeHighlightedTextColor = Color.FromArgb(volumeHighlightedTextColorArgb);
-                if (dict.TryGetValue("PositiveDeltaColor", out string? positiveDeltaColorStr) && int.TryParse(positiveDeltaColorStr, out int positiveDeltaColorArgb)) _positiveDeltaColor = Color.FromArgb(positiveDeltaColorArgb);
-                if (dict.TryGetValue("NegativeDeltaColor", out string? negativeDeltaColorStr) && int.TryParse(negativeDeltaColorStr, out int negativeDeltaColorArgb)) _negativeDeltaColor = Color.FromArgb(negativeDeltaColorArgb);
-                if (dict.TryGetValue("NeutralDeltaColor", out string? neutralDeltaColorStr) && int.TryParse(neutralDeltaColorStr, out int neutralDeltaColorArgb)) _neutralDeltaColor = Color.FromArgb(neutralDeltaColorArgb);
-                if (dict.TryGetValue("HighlightPoc", out string? highlightPocStr) && bool.TryParse(highlightPocStr, out bool highlightPoc)) _highlightPoc = highlightPoc;
-                if (dict.TryGetValue("PocBorderColor", out string? pocBorderColorStr) && int.TryParse(pocBorderColorStr, out int pocBorderColorArgb)) _pocBorderColor = Color.FromArgb(pocBorderColorArgb);
-                if (dict.TryGetValue("PocBorderWidth", out string? pocBorderWidthStr) && int.TryParse(pocBorderWidthStr, out int pocBorderWidth)) _pocBorderWidth = pocBorderWidth;
-                if (dict.TryGetValue("DrawGridLines", out string? drawGridLinesStr) && bool.TryParse(drawGridLinesStr, out bool drawGridLines)) _drawGridLines = drawGridLines;
-                if (dict.TryGetValue("GridLineColor", out string? gridLineColorStr) && int.TryParse(gridLineColorStr, out int gridLineColorArgb)) _gridLineColor = Color.FromArgb(gridLineColorArgb);
-                
-                if (dict.TryGetValue("ShowCandleInMiddle", out string? showCandleInMiddleStr) && bool.TryParse(showCandleInMiddleStr, out bool showCandleInMiddle)) _showCandleInMiddle = showCandleInMiddle;
-                if (dict.TryGetValue("CandleWidth", out string? candleWidthStr) && int.TryParse(candleWidthStr, out int candleWidth)) _candleWidth = candleWidth;
-                if (dict.TryGetValue("WickWidth", out string? wickWidthStr) && int.TryParse(wickWidthStr, out int wickWidth)) _wickWidth = wickWidth;
-                if (dict.TryGetValue("BullishCandleColor", out string? bullishCandleColorStr) && int.TryParse(bullishCandleColorStr, out int bullishCandleColorArgb)) _bullishCandleColor = Color.FromArgb(bullishCandleColorArgb);
-                if (dict.TryGetValue("BearishCandleColor", out string? bearishCandleColorStr) && int.TryParse(bearishCandleColorStr, out int bearishCandleColorArgb)) _bearishCandleColor = Color.FromArgb(bearishCandleColorArgb);
-                
-                if (dict.TryGetValue("ShowRightProfile", out string? showRightProfileStr) && bool.TryParse(showRightProfileStr, out bool showRightProfile)) _showRightProfile = showRightProfile;
-                if (dict.TryGetValue("RightProfileWidth", out string? rightProfileWidthStr) && int.TryParse(rightProfileWidthStr, out int rightProfileWidth)) _rightProfileWidth = rightProfileWidth;
-                if (dict.TryGetValue("RightProfileBgColor", out string? rightProfileBgColorStr) && int.TryParse(rightProfileBgColorStr, out int rightProfileBgColorArgb)) _rightProfileBgColor = Color.FromArgb(rightProfileBgColorArgb);
-                if (dict.TryGetValue("RightProfileColorPositive", out string? rightProfileColorPositiveStr) && int.TryParse(rightProfileColorPositiveStr, out int rightProfileColorPositiveArgb)) _rightProfileColorPositive = Color.FromArgb(rightProfileColorPositiveArgb);
-                if (dict.TryGetValue("RightProfileColorNegative", out string? rightProfileColorNegativeStr) && int.TryParse(rightProfileColorNegativeStr, out int rightProfileColorNegativeArgb)) _rightProfileColorNegative = Color.FromArgb(rightProfileColorNegativeArgb);
-                
-                if (dict.TryGetValue("ShowBottomStats", out string? showBottomStatsStr) && bool.TryParse(showBottomStatsStr, out bool showBottomStats)) _showBottomStats = showBottomStats;
-                if (dict.TryGetValue("DeltaPositiveBgColor", out string? deltaPositiveBgColorStr) && int.TryParse(deltaPositiveBgColorStr, out int deltaPositiveBgColorArgb)) _deltaPositiveBgColor = Color.FromArgb(deltaPositiveBgColorArgb);
-                if (dict.TryGetValue("DeltaNegativeBgColor", out string? deltaNegativeBgColorStr) && int.TryParse(deltaNegativeBgColorStr, out int deltaNegativeBgColorArgb)) _deltaNegativeBgColor = Color.FromArgb(deltaNegativeBgColorArgb);
-                if (dict.TryGetValue("CdDayPositiveBgColor", out string? cdDayPositiveBgColorStr) && int.TryParse(cdDayPositiveBgColorStr, out int cdDayPositiveBgColorArgb)) _cdDayPositiveBgColor = Color.FromArgb(cdDayPositiveBgColorArgb);
-                if (dict.TryGetValue("CdDayNegativeBgColor", out string? cdDayNegativeBgColorStr) && int.TryParse(cdDayNegativeBgColorStr, out int cdDayNegativeBgColorArgb)) _cdDayNegativeBgColor = Color.FromArgb(cdDayNegativeBgColorArgb);
-                if (dict.TryGetValue("CandleVolBgColor", out string? candleVolBgColorStr) && int.TryParse(candleVolBgColorStr, out int candleVolBgColorArgb)) _candleVolBgColor = Color.FromArgb(candleVolBgColorArgb);
-                if (dict.TryGetValue("StatsTextColor", out string? statsTextColorStr) && int.TryParse(statsTextColorStr, out int statsTextColorArgb)) _statsTextColor = Color.FromArgb(statsTextColorArgb);
-                if (dict.TryGetValue("StatsLabelColor", out string? statsLabelColorStr) && int.TryParse(statsLabelColorStr, out int statsLabelColorArgb)) _statsLabelColor = Color.FromArgb(statsLabelColorArgb);
+                if (loadAppearance)
+                {
+                    if (dict.TryGetValue("PurpleColor", out string? purpleColorStr) && int.TryParse(purpleColorStr, out int purpleColorArgb)) _purpleColor = Color.FromArgb(purpleColorArgb);
+                    if (dict.TryGetValue("OrangeColor", out string? orangeColorStr) && int.TryParse(orangeColorStr, out int orangeColorArgb)) _orangeColor = Color.FromArgb(orangeColorArgb);
+                    if (dict.TryGetValue("DefaultBgColor", out string? defaultBgColorStr) && int.TryParse(defaultBgColorStr, out int defaultBgColorArgb)) _defaultBgColor = Color.FromArgb(defaultBgColorArgb);
+                    if (dict.TryGetValue("VolumeTextColor", out string? volumeTextColorStr) && int.TryParse(volumeTextColorStr, out int volumeTextColorArgb)) _volumeTextColor = Color.FromArgb(volumeTextColorArgb);
+                    if (dict.TryGetValue("VolumeHighlightedTextColor", out string? volumeHighlightedTextColorStr) && int.TryParse(volumeHighlightedTextColorStr, out int volumeHighlightedTextColorArgb)) _volumeHighlightedTextColor = Color.FromArgb(volumeHighlightedTextColorArgb);
+                    if (dict.TryGetValue("PositiveDeltaColor", out string? positiveDeltaColorStr) && int.TryParse(positiveDeltaColorStr, out int positiveDeltaColorArgb)) _positiveDeltaColor = Color.FromArgb(positiveDeltaColorArgb);
+                    if (dict.TryGetValue("NegativeDeltaColor", out string? negativeDeltaColorStr) && int.TryParse(negativeDeltaColorStr, out int negativeDeltaColorArgb)) _negativeDeltaColor = Color.FromArgb(negativeDeltaColorArgb);
+                    if (dict.TryGetValue("NeutralDeltaColor", out string? neutralDeltaColorStr) && int.TryParse(neutralDeltaColorStr, out int neutralDeltaColorArgb)) _neutralDeltaColor = Color.FromArgb(neutralDeltaColorArgb);
+                    if (dict.TryGetValue("HighlightPoc", out string? highlightPocStr) && bool.TryParse(highlightPocStr, out bool highlightPoc)) _highlightPoc = highlightPoc;
+                    if (dict.TryGetValue("PocBorderColor", out string? pocBorderColorStr) && int.TryParse(pocBorderColorStr, out int pocBorderColorArgb)) _pocBorderColor = Color.FromArgb(pocBorderColorArgb);
+                    if (dict.TryGetValue("PocBorderWidth", out string? pocBorderWidthStr) && int.TryParse(pocBorderWidthStr, out int pocBorderWidth)) _pocBorderWidth = pocBorderWidth;
+                    if (dict.TryGetValue("DrawGridLines", out string? drawGridLinesStr) && bool.TryParse(drawGridLinesStr, out bool drawGridLines)) _drawGridLines = drawGridLines;
+                    if (dict.TryGetValue("GridLineColor", out string? gridLineColorStr) && int.TryParse(gridLineColorStr, out int gridLineColorArgb)) _gridLineColor = Color.FromArgb(gridLineColorArgb);
+
+                    if (dict.TryGetValue("ShowCandleInMiddle", out string? showCandleInMiddleStr) && bool.TryParse(showCandleInMiddleStr, out bool showCandleInMiddle)) _showCandleInMiddle = showCandleInMiddle;
+                    if (dict.TryGetValue("CandleWidth", out string? candleWidthStr) && int.TryParse(candleWidthStr, out int candleWidth)) _candleWidth = candleWidth;
+                    if (dict.TryGetValue("WickWidth", out string? wickWidthStr) && int.TryParse(wickWidthStr, out int wickWidth)) _wickWidth = wickWidth;
+                    if (dict.TryGetValue("BullishCandleColor", out string? bullishCandleColorStr) && int.TryParse(bullishCandleColorStr, out int bullishCandleColorArgb)) _bullishCandleColor = Color.FromArgb(bullishCandleColorArgb);
+                    if (dict.TryGetValue("BearishCandleColor", out string? bearishCandleColorStr) && int.TryParse(bearishCandleColorStr, out int bearishCandleColorArgb)) _bearishCandleColor = Color.FromArgb(bearishCandleColorArgb);
+
+                    if (dict.TryGetValue("ShowRightProfile", out string? showRightProfileStr) && bool.TryParse(showRightProfileStr, out bool showRightProfile)) _showRightProfile = showRightProfile;
+                    if (dict.TryGetValue("RightProfileWidth", out string? rightProfileWidthStr) && int.TryParse(rightProfileWidthStr, out int rightProfileWidth)) _rightProfileWidth = rightProfileWidth;
+                    if (dict.TryGetValue("RightProfileBgColor", out string? rightProfileBgColorStr) && int.TryParse(rightProfileBgColorStr, out int rightProfileBgColorArgb)) _rightProfileBgColor = Color.FromArgb(rightProfileBgColorArgb);
+                    if (dict.TryGetValue("RightProfileColorPositive", out string? rightProfileColorPositiveStr) && int.TryParse(rightProfileColorPositiveStr, out int rightProfileColorPositiveArgb)) _rightProfileColorPositive = Color.FromArgb(rightProfileColorPositiveArgb);
+                    if (dict.TryGetValue("RightProfileColorNegative", out string? rightProfileColorNegativeStr) && int.TryParse(rightProfileColorNegativeStr, out int rightProfileColorNegativeArgb)) _rightProfileColorNegative = Color.FromArgb(rightProfileColorNegativeArgb);
+
+                    if (dict.TryGetValue("ShowBottomStats", out string? showBottomStatsStr) && bool.TryParse(showBottomStatsStr, out bool showBottomStats)) _showBottomStats = showBottomStats;
+                    if (dict.TryGetValue("DeltaPositiveBgColor", out string? deltaPositiveBgColorStr) && int.TryParse(deltaPositiveBgColorStr, out int deltaPositiveBgColorArgb)) _deltaPositiveBgColor = Color.FromArgb(deltaPositiveBgColorArgb);
+                    if (dict.TryGetValue("DeltaNegativeBgColor", out string? deltaNegativeBgColorStr) && int.TryParse(deltaNegativeBgColorStr, out int deltaNegativeBgColorArgb)) _deltaNegativeBgColor = Color.FromArgb(deltaNegativeBgColorArgb);
+                    if (dict.TryGetValue("CdDayPositiveBgColor", out string? cdDayPositiveBgColorStr) && int.TryParse(cdDayPositiveBgColorStr, out int cdDayPositiveBgColorArgb)) _cdDayPositiveBgColor = Color.FromArgb(cdDayPositiveBgColorArgb);
+                    if (dict.TryGetValue("CdDayNegativeBgColor", out string? cdDayNegativeBgColorStr) && int.TryParse(cdDayNegativeBgColorStr, out int cdDayNegativeBgColorArgb)) _cdDayNegativeBgColor = Color.FromArgb(cdDayNegativeBgColorArgb);
+                    if (dict.TryGetValue("CandleVolBgColor", out string? candleVolBgColorStr) && int.TryParse(candleVolBgColorStr, out int candleVolBgColorArgb)) _candleVolBgColor = Color.FromArgb(candleVolBgColorArgb);
+                    if (dict.TryGetValue("StatsTextColor", out string? statsTextColorStr) && int.TryParse(statsTextColorStr, out int statsTextColorArgb)) _statsTextColor = Color.FromArgb(statsTextColorArgb);
+                    if (dict.TryGetValue("StatsLabelColor", out string? statsLabelColorStr) && int.TryParse(statsLabelColorStr, out int statsLabelColorArgb)) _statsLabelColor = Color.FromArgb(statsLabelColorArgb);
+                }
 
                 if (dict.TryGetValue("ShowImbalances", out string? showImbalancesStr) && bool.TryParse(showImbalancesStr, out bool showImbalances)) _showImbalances = showImbalances;
                 if (dict.TryGetValue("IgnoreZeroValues", out string? ignoreZeroValuesStr) && bool.TryParse(ignoreZeroValuesStr, out bool ignoreZeroValues)) _ignoreZeroValues = ignoreZeroValues;
@@ -2658,26 +2724,32 @@ namespace ATAS.Indicators.Custom
                 if (dict.TryGetValue("ImbalanceVolume", out string? imbalanceVolumeStr) && decimal.TryParse(imbalanceVolumeStr, out decimal imbalanceVolume)) _imbalanceVolume = imbalanceVolume;
                 if (dict.TryGetValue("DaysLookBack", out string? daysLookBackStr) && int.TryParse(daysLookBackStr, out int daysLookBack)) _daysLookBack = daysLookBack;
                 if (dict.TryGetValue("LineTillTouch", out string? lineTillTouchStr) && bool.TryParse(lineTillTouchStr, out bool lineTillTouch)) _lineTillTouch = lineTillTouch;
-                if (dict.TryGetValue("AskBidImbalanceColor", out string? askBidImbalanceColorStr) && int.TryParse(askBidImbalanceColorStr, out int askBidImbalanceColorArgb)) _askBidImbalanceColor = Color.FromArgb(askBidImbalanceColorArgb);
-                if (dict.TryGetValue("BidAskImbalanceColor", out string? bidAskImbalanceColorStr) && int.TryParse(bidAskImbalanceColorStr, out int bidAskImbalanceColorArgb)) _bidAskImbalanceColor = Color.FromArgb(bidAskImbalanceColorArgb);
-                if (dict.TryGetValue("LineWidth", out string? lineWidthStr) && int.TryParse(lineWidthStr, out int lineWidth)) _lineWidth = lineWidth;
+                if (loadAppearance)
+                {
+                    if (dict.TryGetValue("AskBidImbalanceColor", out string? askBidImbalanceColorStr) && int.TryParse(askBidImbalanceColorStr, out int askBidImbalanceColorArgb)) _askBidImbalanceColor = Color.FromArgb(askBidImbalanceColorArgb);
+                    if (dict.TryGetValue("BidAskImbalanceColor", out string? bidAskImbalanceColorStr) && int.TryParse(bidAskImbalanceColorStr, out int bidAskImbalanceColorArgb)) _bidAskImbalanceColor = Color.FromArgb(bidAskImbalanceColorArgb);
+                    if (dict.TryGetValue("LineWidth", out string? lineWidthStr) && int.TryParse(lineWidthStr, out int lineWidth)) _lineWidth = lineWidth;
+                }
                 if (dict.TryGetValue("PrintLineForXBars", out string? printLineForXBarsStr) && int.TryParse(printLineForXBarsStr, out int printLineForXBars)) _printLineForXBars = printLineForXBars;
 
                 if (dict.TryGetValue("ShowDivergence", out string? showDivergenceStr) && bool.TryParse(showDivergenceStr, out bool showDivergence)) _showDivergence = showDivergence;
                 if (dict.TryGetValue("DeltaPercentageThreshold", out string? deltaPercentageThresholdStr) && decimal.TryParse(deltaPercentageThresholdStr, out decimal deltaPercentageThreshold)) _deltaPercentageThreshold = deltaPercentageThreshold;
                 if (dict.TryGetValue("ShowMinorDivergence", out string? showMinorDivergenceStr) && bool.TryParse(showMinorDivergenceStr, out bool showMinorDivergence)) _showMinorDivergence = showMinorDivergence;
                 if (dict.TryGetValue("MinorDeltaPercentageThreshold", out string? minorDeltaPercentageThresholdStr) && decimal.TryParse(minorDeltaPercentageThresholdStr, out decimal minorDeltaPercentageThreshold)) _minorDeltaPercentageThreshold = minorDeltaPercentageThreshold;
-                if (dict.TryGetValue("MajorArrowSize", out string? majorArrowSizeStr) && int.TryParse(majorArrowSizeStr, out int majorArrowSize)) _majorArrowSize = majorArrowSize;
-                if (dict.TryGetValue("MinorArrowSize", out string? minorArrowSizeStr) && int.TryParse(minorArrowSizeStr, out int minorArrowSize)) _minorArrowSize = minorArrowSize;
-                if (dict.TryGetValue("BullishDivergenceColor", out string? bullishDivergenceColorStr) && int.TryParse(bullishDivergenceColorStr, out int bullishDivergenceColorArgb)) _bullishDivergenceColor = Color.FromArgb(bullishDivergenceColorArgb);
-                if (dict.TryGetValue("BearishDivergenceColor", out string? bearishDivergenceColorStr) && int.TryParse(bearishDivergenceColorStr, out int bearishDivergenceColorArgb)) _bearishDivergenceColor = Color.FromArgb(bearishDivergenceColorArgb);
-                if (dict.TryGetValue("MinorBullishDivergenceColor", out string? minorBullishDivergenceColorStr) && int.TryParse(minorBullishDivergenceColorStr, out int minorBullishDivergenceColorArgb)) _minorBullishDivergenceColor = Color.FromArgb(minorBullishDivergenceColorArgb);
-                if (dict.TryGetValue("MinorBearishDivergenceColor", out string? minorBearishDivergenceColorStr) && int.TryParse(minorBearishDivergenceColorStr, out int minorBearishDivergenceColorArgb)) _minorBearishDivergenceColor = Color.FromArgb(minorBearishDivergenceColorArgb);
                 if (dict.TryGetValue("MarkInvalidatedDivergences", out string? markInvalidatedDivergencesStr) && bool.TryParse(markInvalidatedDivergencesStr, out bool markInvalidatedDivergences)) _markInvalidatedDivergences = markInvalidatedDivergences;
                 if (dict.TryGetValue("InvalidationLookbackBars", out string? invalidationLookbackBarsStr) && int.TryParse(invalidationLookbackBarsStr, out int invalidationLookbackBars)) _invalidationLookbackBars = invalidationLookbackBars;
-                if (dict.TryGetValue("InvalidatedArrowColor", out string? invalidatedArrowColorStr) && int.TryParse(invalidatedArrowColorStr, out int invalidatedArrowColorArgb)) _invalidatedArrowColor = Color.FromArgb(invalidatedArrowColorArgb);
                 if (dict.TryGetValue("DivergenceDaysLookBack", out string? divergenceDaysLookBackStr) && int.TryParse(divergenceDaysLookBackStr, out int divergenceDaysLookBack)) _divergenceDaysLookBack = divergenceDaysLookBack;
-                if (dict.TryGetValue("MaxDivergenceArrows", out string? maxDivergenceArrowsStr) && int.TryParse(maxDivergenceArrowsStr, out int maxDivergenceArrows)) _maxDivergenceArrows = maxDivergenceArrows;
+                if (loadAppearance)
+                {
+                    if (dict.TryGetValue("MajorArrowSize", out string? majorArrowSizeStr) && int.TryParse(majorArrowSizeStr, out int majorArrowSize)) _majorArrowSize = majorArrowSize;
+                    if (dict.TryGetValue("MinorArrowSize", out string? minorArrowSizeStr) && int.TryParse(minorArrowSizeStr, out int minorArrowSize)) _minorArrowSize = minorArrowSize;
+                    if (dict.TryGetValue("BullishDivergenceColor", out string? bullishDivergenceColorStr) && int.TryParse(bullishDivergenceColorStr, out int bullishDivergenceColorArgb)) _bullishDivergenceColor = Color.FromArgb(bullishDivergenceColorArgb);
+                    if (dict.TryGetValue("BearishDivergenceColor", out string? bearishDivergenceColorStr) && int.TryParse(bearishDivergenceColorStr, out int bearishDivergenceColorArgb)) _bearishDivergenceColor = Color.FromArgb(bearishDivergenceColorArgb);
+                    if (dict.TryGetValue("MinorBullishDivergenceColor", out string? minorBullishDivergenceColorStr) && int.TryParse(minorBullishDivergenceColorStr, out int minorBullishDivergenceColorArgb)) _minorBullishDivergenceColor = Color.FromArgb(minorBullishDivergenceColorArgb);
+                    if (dict.TryGetValue("MinorBearishDivergenceColor", out string? minorBearishDivergenceColorStr) && int.TryParse(minorBearishDivergenceColorStr, out int minorBearishDivergenceColorArgb)) _minorBearishDivergenceColor = Color.FromArgb(minorBearishDivergenceColorArgb);
+                    if (dict.TryGetValue("InvalidatedArrowColor", out string? invalidatedArrowColorStr) && int.TryParse(invalidatedArrowColorStr, out int invalidatedArrowColorArgb)) _invalidatedArrowColor = Color.FromArgb(invalidatedArrowColorArgb);
+                    if (dict.TryGetValue("MaxDivergenceArrows", out string? maxDivergenceArrowsStr) && int.TryParse(maxDivergenceArrowsStr, out int maxDivergenceArrows)) _maxDivergenceArrows = maxDivergenceArrows;
+                }
 
                 // Preserve semantic ordering even when an older or hand-edited
                 // profile contains inconsistent threshold values.
