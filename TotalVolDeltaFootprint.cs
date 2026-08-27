@@ -49,6 +49,18 @@ namespace ATAS.Indicators.Custom
             ES_ETH
         }
 
+        public enum TradingMarket
+        {
+            NQ,
+            ES
+        }
+
+        public enum ProfileEditSession
+        {
+            RTH,
+            ETH
+        }
+
         // ----------------------------------------------------
         // Color Theme Enum (Dark Mode / Light Mode / Custom)
         // ----------------------------------------------------
@@ -113,6 +125,28 @@ namespace ATAS.Indicators.Custom
             };
         }
 
+        private static IndicatorProfile GetProfileFor(TradingMarket market, ProfileEditSession session)
+        {
+            return (market, session) switch
+            {
+                (TradingMarket.NQ, ProfileEditSession.RTH) => IndicatorProfile.Default,
+                (TradingMarket.NQ, ProfileEditSession.ETH) => IndicatorProfile.Profile1,
+                (TradingMarket.ES, ProfileEditSession.RTH) => IndicatorProfile.Profile2,
+                (TradingMarket.ES, ProfileEditSession.ETH) => IndicatorProfile.Profile3,
+                _ => IndicatorProfile.Default
+            };
+        }
+
+        private static TradingMarket GetMarketForProfile(IndicatorProfile profile)
+            => profile is IndicatorProfile.Profile2 or IndicatorProfile.Profile3
+                ? TradingMarket.ES
+                : TradingMarket.NQ;
+
+        private static ProfileEditSession GetEditSessionForProfile(IndicatorProfile profile)
+            => profile is IndicatorProfile.Profile1 or IndicatorProfile.Profile3
+                ? ProfileEditSession.ETH
+                : ProfileEditSession.RTH;
+
         private static string GetCalibrationStatus(IndicatorProfile profile)
         {
             return profile switch
@@ -157,6 +191,8 @@ namespace ATAS.Indicators.Custom
             public bool IsBuy { get; set; } // true = Ask/Bid (Buy), false = Bid/Ask (Sell)
             public bool IsMitigated { get; set; }
             public int MitigatedBar { get; set; }
+            public bool ExtendTillTouch { get; set; }
+            public int MaximumLineBars { get; set; }
         }
 
         // ----------------------------------------------------
@@ -170,6 +206,30 @@ namespace ATAS.Indicators.Custom
             public bool IsMajor { get; set; } // true = Major, false = Minor
             public bool IsInvalidated { get; set; }
             public int InvalidatedBar { get; set; }
+            public bool MarkInvalidated { get; set; }
+            public int InvalidationLookbackBars { get; set; }
+        }
+
+        private sealed class SessionRuntimeSettings
+        {
+            public int TicksGrouping { get; init; }
+            public decimal PurpleThreshold { get; init; }
+            public decimal OrangeThreshold { get; init; }
+            public bool ShowImbalances { get; init; }
+            public bool IgnoreZeroValues { get; init; }
+            public decimal ImbalanceRatio { get; init; }
+            public int ImbalanceRange { get; init; }
+            public decimal ImbalanceVolume { get; init; }
+            public int DaysLookBack { get; init; }
+            public bool LineTillTouch { get; init; }
+            public int PrintLineForXBars { get; init; }
+            public bool ShowDivergence { get; init; }
+            public decimal DeltaPercentageThreshold { get; init; }
+            public bool ShowMinorDivergence { get; init; }
+            public decimal MinorDeltaPercentageThreshold { get; init; }
+            public int DivergenceDaysLookBack { get; init; }
+            public bool MarkInvalidatedDivergences { get; init; }
+            public int InvalidationLookbackBars { get; init; }
         }
 
         // ----------------------------------------------------
@@ -212,9 +272,12 @@ namespace ATAS.Indicators.Custom
         private readonly Dictionary<int, decimal> _cdDayCache = new Dictionary<int, decimal>();
         private readonly List<ImbalanceLine> _imbalanceLines = new List<ImbalanceLine>();
         private readonly List<DivergencePoint> _divergences = new List<DivergencePoint>();
+        private readonly Dictionary<IndicatorProfile, SessionRuntimeSettings> _runtimeSettingsCache = new Dictionary<IndicatorProfile, SessionRuntimeSettings>();
 
         // Profile & Theme State Management
         private IndicatorProfile _activeProfile = IndicatorProfile.Default;
+        private TradingMarket _selectedMarket = TradingMarket.NQ;
+        private ProfileEditSession _profileEditSession = ProfileEditSession.RTH;
         private ColorThemeMode _colorTheme = ColorThemeMode.DarkMode;
         private string _profileLabel = "NQ | RTH | 09:30-16:00 ET";
         private bool _isApplyingProfile = false;
@@ -412,39 +475,61 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Profile Management Settings
         // ----------------------------------------------------
-        private void SelectProfile(IndicatorProfile targetProfile)
+        private void SelectMarketAndEditSession(TradingMarket market, ProfileEditSession editSession)
         {
-            if (_activeProfile != targetProfile && !_isApplyingProfile)
-            {
-                // Save settings of current active profile before switching
-                SaveProfileSettings(_activeProfile);
+            var targetProfile = GetProfileFor(market, editSession);
+            if (_isApplyingProfile || (_selectedMarket == market && _profileEditSession == editSession && _activeProfile == targetProfile))
+                return;
 
-                _activeProfile = targetProfile;
+            // The settings panel edits one session at a time, while calculations
+            // and rendering always resolve both sessions automatically per bar.
+            SaveProfileSettings(_activeProfile);
 
-                // Load settings of the new profile
-                LoadProfileSettings(_activeProfile);
+            _selectedMarket = market;
+            _profileEditSession = editSession;
+            _activeProfile = targetProfile;
+            LoadProfileSettings(_activeProfile);
 
-                // Re-calculate and redraw chart to apply
-                RecalculateValues();
-                RedrawChart();
+            RecalculateValues();
+            RedrawChart();
 
-                // Empty property name follows INotifyPropertyChanged convention:
-                // refresh every value shown in the ATAS property grid after a preset switch.
-                OnPropertyChanged(string.Empty);
-                OnPropertyChanged(nameof(ProfileLabel));
-                OnPropertyChanged(nameof(ActivePresetScope));
-                OnPropertyChanged(nameof(ActiveCalibrationStatus));
-                OnPropertyChanged(nameof(QuickProfile));
-                OnPropertyChanged(nameof(ActiveProfile));
-            }
+            OnPropertyChanged(string.Empty);
+            OnPropertyChanged(nameof(ProfileLabel));
+            OnPropertyChanged(nameof(QuickMarket));
+            OnPropertyChanged(nameof(ProfileToEdit));
+            OnPropertyChanged(nameof(ActivePresetScope));
+            OnPropertyChanged(nameof(EditingProfileSummary));
+            OnPropertyChanged(nameof(ActiveCalibrationStatus));
+            OnPropertyChanged(nameof(QuickProfile));
+            OnPropertyChanged(nameof(ActiveProfile));
         }
 
-        [Display(Name = "1) Profile", GroupName = QuickSetupGroup, Order = 0,
-            Description = "Choose one of four fixed NQ/ES presets from the dropdown. Typing custom text is disabled.")]
+        [Display(Name = "1) Market", GroupName = QuickSetupGroup, Order = 0,
+            Description = "Choose NQ or ES. Both its RTH and ETH profiles are applied automatically on the same chart.")]
+        public TradingMarket QuickMarket
+        {
+            get => _selectedMarket;
+            set => SelectMarketAndEditSession(value, _profileEditSession);
+        }
+
+        [Display(Name = "2) Edit Session", GroupName = QuickSetupGroup, Order = 1,
+            Description = "Choose which session profile is shown in the settings panel for tuning. This does not disable the other session on the chart.")]
+        public ProfileEditSession ProfileToEdit
+        {
+            get => _profileEditSession;
+            set => SelectMarketAndEditSession(_selectedMarket, value);
+        }
+
+        // Compatibility bridge for workspaces saved by the previous four-profile UI.
+        [Browsable(false)]
         public QuickTradingProfile QuickProfile
         {
             get => ToQuickTradingProfile(_activeProfile);
-            set => SelectProfile(ToIndicatorProfile(value));
+            set
+            {
+                var profile = ToIndicatorProfile(value);
+                SelectMarketAndEditSession(GetMarketForProfile(profile), GetEditSessionForProfile(profile));
+            }
         }
 
         // Retained only to migrate saved workspaces from the former text-based
@@ -453,16 +538,25 @@ namespace ATAS.Indicators.Custom
         public string ActiveProfile
         {
             get => GetDisplayNameForProfile(_activeProfile);
-            set => SelectProfile(ParseProfileFromDisplayName(value));
+            set
+            {
+                var profile = ParseProfileFromDisplayName(value);
+                SelectMarketAndEditSession(GetMarketForProfile(profile), GetEditSessionForProfile(profile));
+            }
         }
 
         [ReadOnly(true)]
-        [Display(Name = "2) Active Session", GroupName = QuickSetupGroup, Order = 1,
-            Description = "Set the ATAS chart time zone/session template to the same US Eastern hours.")]
-        public string ActivePresetScope => GetProfileScope(_activeProfile);
+        [Display(Name = "3) Auto Application", GroupName = QuickSetupGroup, Order = 2,
+            Description = "Bars outside 09:30-16:00 and 18:00-09:30 are not assigned a footprint profile. Keep chart time in US Eastern.")]
+        public string ActivePresetScope => $"{_selectedMarket} | RTH 09:30-16:00 + ETH 18:00-09:30 ET | AUTO";
 
         [ReadOnly(true)]
-        [Display(Name = "3) Validation Status", GroupName = QuickSetupGroup, Order = 2,
+        [Display(Name = "4) Editing Now", GroupName = QuickSetupGroup, Order = 3,
+            Description = "Only identifies which settings are being edited; both profiles remain active automatically.")]
+        public string EditingProfileSummary => GetProfileScope(_activeProfile);
+
+        [ReadOnly(true)]
+        [Display(Name = "5) Validation Status", GroupName = QuickSetupGroup, Order = 4,
             Description = "USER-TUNED means the current NQ RTH baseline is retained. RECOMMENDED BASELINE means paper-test and walk-forward validation are still required.")]
         public string ActiveCalibrationStatus => GetCalibrationStatus(_activeProfile);
 
@@ -490,8 +584,7 @@ namespace ATAS.Indicators.Custom
             }
         }
 
-        [Display(Name = "CD Reset Hour (Chart Time)", GroupName = "10. ADVANCED SESSION", Order = 560,
-            Description = "Hour when cumulative delta starts a new session. Keep the ATAS chart time zone aligned with the preset (US Eastern).")]
+        [Browsable(false)]
         [Range(0, 23)]
         public int SessionResetHour
         {
@@ -499,8 +592,7 @@ namespace ATAS.Indicators.Custom
             set { if (_sessionResetHour != value) { _sessionResetHour = value; if (!_isApplyingProfile) RecalculateValues(); } }
         }
 
-        [Display(Name = "CD Reset Minute", GroupName = "10. ADVANCED SESSION", Order = 570,
-            Description = "Minute when cumulative delta starts a new session.")]
+        [Browsable(false)]
         [Range(0, 59)]
         public int SessionResetMinute
         {
@@ -1243,6 +1335,189 @@ namespace ATAS.Indicators.Custom
             _isApplyingProfile = false;
         }
 
+        private SessionRuntimeSettings CaptureRuntimeSettings()
+        {
+            return new SessionRuntimeSettings
+            {
+                TicksGrouping = TicksGrouping,
+                PurpleThreshold = PurpleThreshold,
+                OrangeThreshold = OrangeThreshold,
+                ShowImbalances = ShowImbalances,
+                IgnoreZeroValues = IgnoreZeroValues,
+                ImbalanceRatio = ImbalanceRatio,
+                ImbalanceRange = ImbalanceRange,
+                ImbalanceVolume = ImbalanceVolume,
+                DaysLookBack = DaysLookBack,
+                LineTillTouch = LineTillTouch,
+                PrintLineForXBars = PrintLineForXBars,
+                ShowDivergence = ShowDivergence,
+                DeltaPercentageThreshold = DeltaPercentageThreshold,
+                ShowMinorDivergence = ShowMinorDivergence,
+                MinorDeltaPercentageThreshold = MinorDeltaPercentageThreshold,
+                DivergenceDaysLookBack = DivergenceDaysLookBack,
+                MarkInvalidatedDivergences = MarkInvalidatedDivergences,
+                InvalidationLookbackBars = InvalidationLookbackBars
+            };
+        }
+
+        private static SessionRuntimeSettings CreateDefaultRuntimeSettings(IndicatorProfile profile)
+        {
+            var core = profile switch
+            {
+                IndicatorProfile.Default => (12, 150m, 300m, 280m, 2, 20m, 10m, 2m),
+                IndicatorProfile.Profile1 => (8, 60m, 120m, 300m, 3, 8m, 12m, 3m),
+                IndicatorProfile.Profile2 => (4, 300m, 600m, 300m, 3, 40m, 8m, 2m),
+                IndicatorProfile.Profile3 => (4, 100m, 200m, 300m, 3, 12m, 10m, 2.5m),
+                _ => (1, 1000m, 1500m, 300m, 3, 30m, 10m, 2.5m)
+            };
+
+            return new SessionRuntimeSettings
+            {
+                TicksGrouping = core.Item1,
+                PurpleThreshold = core.Item2,
+                OrangeThreshold = core.Item3,
+                ShowImbalances = true,
+                IgnoreZeroValues = false,
+                ImbalanceRatio = core.Item4,
+                ImbalanceRange = core.Item5,
+                ImbalanceVolume = core.Item6,
+                DaysLookBack = 20,
+                LineTillTouch = true,
+                PrintLineForXBars = 10,
+                ShowDivergence = true,
+                DeltaPercentageThreshold = core.Item7,
+                ShowMinorDivergence = true,
+                MinorDeltaPercentageThreshold = core.Item8,
+                DivergenceDaysLookBack = 20,
+                MarkInvalidatedDivergences = true,
+                InvalidationLookbackBars = 2
+            };
+        }
+
+        private SessionRuntimeSettings GetRuntimeSettings(IndicatorProfile profile)
+        {
+            if (profile == _activeProfile)
+                return CaptureRuntimeSettings();
+
+            if (_runtimeSettingsCache.TryGetValue(profile, out var cached))
+                return cached;
+
+            var defaults = CreateDefaultRuntimeSettings(profile);
+            try
+            {
+                string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ATAS", "Indicators", "Profiles");
+                string filepath = Path.Combine(folder, $"TotalVolDeltaFootprint_{profile}.cfg");
+                if (!File.Exists(filepath))
+                {
+                    _runtimeSettingsCache[profile] = defaults;
+                    return defaults;
+                }
+
+                var dict = File.ReadAllLines(filepath)
+                    .Select(line => line.Split(new[] { '=' }, 2))
+                    .Where(parts => parts.Length == 2)
+                    .ToDictionary(parts => parts[0].Trim(), parts => parts[1].Trim());
+
+                int ReadInt(string key, int fallback)
+                    => dict.TryGetValue(key, out var raw) && int.TryParse(raw, out var parsed) ? parsed : fallback;
+                decimal ReadDecimal(string key, decimal fallback)
+                    => dict.TryGetValue(key, out var raw) && decimal.TryParse(raw, out var parsed) ? parsed : fallback;
+                bool ReadBool(string key, bool fallback)
+                    => dict.TryGetValue(key, out var raw) && bool.TryParse(raw, out var parsed) ? parsed : fallback;
+
+                var loaded = new SessionRuntimeSettings
+                {
+                    TicksGrouping = Math.Max(1, ReadInt("TicksGrouping", defaults.TicksGrouping)),
+                    PurpleThreshold = Math.Max(0m, ReadDecimal("PurpleThreshold", defaults.PurpleThreshold)),
+                    OrangeThreshold = Math.Max(0m, ReadDecimal("OrangeThreshold", defaults.OrangeThreshold)),
+                    ShowImbalances = ReadBool("ShowImbalances", defaults.ShowImbalances),
+                    IgnoreZeroValues = ReadBool("IgnoreZeroValues", defaults.IgnoreZeroValues),
+                    ImbalanceRatio = Math.Max(100m, ReadDecimal("ImbalanceRatio", defaults.ImbalanceRatio)),
+                    ImbalanceRange = Math.Clamp(ReadInt("ImbalanceRange", defaults.ImbalanceRange), 2, 10),
+                    ImbalanceVolume = Math.Max(0m, ReadDecimal("ImbalanceVolume", defaults.ImbalanceVolume)),
+                    DaysLookBack = Math.Max(1, ReadInt("DaysLookBack", defaults.DaysLookBack)),
+                    LineTillTouch = ReadBool("LineTillTouch", defaults.LineTillTouch),
+                    PrintLineForXBars = Math.Max(1, ReadInt("PrintLineForXBars", defaults.PrintLineForXBars)),
+                    ShowDivergence = ReadBool("ShowDivergence", defaults.ShowDivergence),
+                    DeltaPercentageThreshold = Math.Max(0m, ReadDecimal("DeltaPercentageThreshold", defaults.DeltaPercentageThreshold)),
+                    ShowMinorDivergence = ReadBool("ShowMinorDivergence", defaults.ShowMinorDivergence),
+                    MinorDeltaPercentageThreshold = Math.Max(0m, ReadDecimal("MinorDeltaPercentageThreshold", defaults.MinorDeltaPercentageThreshold)),
+                    DivergenceDaysLookBack = Math.Max(1, ReadInt("DivergenceDaysLookBack", defaults.DivergenceDaysLookBack)),
+                    MarkInvalidatedDivergences = ReadBool("MarkInvalidatedDivergences", defaults.MarkInvalidatedDivergences),
+                    InvalidationLookbackBars = Math.Max(1, ReadInt("InvalidationLookbackBars", defaults.InvalidationLookbackBars))
+                };
+
+                if (loaded.OrangeThreshold < loaded.PurpleThreshold || loaded.MinorDeltaPercentageThreshold > loaded.DeltaPercentageThreshold)
+                {
+                    loaded = new SessionRuntimeSettings
+                    {
+                        TicksGrouping = loaded.TicksGrouping,
+                        PurpleThreshold = loaded.PurpleThreshold,
+                        OrangeThreshold = Math.Max(loaded.OrangeThreshold, loaded.PurpleThreshold),
+                        ShowImbalances = loaded.ShowImbalances,
+                        IgnoreZeroValues = loaded.IgnoreZeroValues,
+                        ImbalanceRatio = loaded.ImbalanceRatio,
+                        ImbalanceRange = loaded.ImbalanceRange,
+                        ImbalanceVolume = loaded.ImbalanceVolume,
+                        DaysLookBack = loaded.DaysLookBack,
+                        LineTillTouch = loaded.LineTillTouch,
+                        PrintLineForXBars = loaded.PrintLineForXBars,
+                        ShowDivergence = loaded.ShowDivergence,
+                        DeltaPercentageThreshold = loaded.DeltaPercentageThreshold,
+                        ShowMinorDivergence = loaded.ShowMinorDivergence,
+                        MinorDeltaPercentageThreshold = Math.Min(loaded.MinorDeltaPercentageThreshold, loaded.DeltaPercentageThreshold),
+                        DivergenceDaysLookBack = loaded.DivergenceDaysLookBack,
+                        MarkInvalidatedDivergences = loaded.MarkInvalidatedDivergences,
+                        InvalidationLookbackBars = loaded.InvalidationLookbackBars
+                    };
+                }
+
+                _runtimeSettingsCache[profile] = loaded;
+                return loaded;
+            }
+            catch
+            {
+                _runtimeSettingsCache[profile] = defaults;
+                return defaults;
+            }
+        }
+
+        private IndicatorProfile? ResolveProfileForCandle(DateTime candleTime)
+        {
+            var time = candleTime.TimeOfDay;
+            var rthStart = new TimeSpan(9, 30, 0);
+            var rthEnd = new TimeSpan(16, 0, 0);
+            var ethStart = new TimeSpan(18, 0, 0);
+
+            if (time >= rthStart && time < rthEnd)
+                return GetProfileFor(_selectedMarket, ProfileEditSession.RTH);
+
+            if (time >= ethStart || time < rthStart)
+                return GetProfileFor(_selectedMarket, ProfileEditSession.ETH);
+
+            return null;
+        }
+
+        private (IndicatorProfile Profile, DateTime TradingDate)? ResolveSessionKey(DateTime candleTime)
+        {
+            var profile = ResolveProfileForCandle(candleTime);
+            if (!profile.HasValue)
+                return null;
+
+            DateTime tradingDate = GetEditSessionForProfile(profile.Value) == ProfileEditSession.ETH && candleTime.TimeOfDay < new TimeSpan(9, 30, 0)
+                ? candleTime.Date.AddDays(-1)
+                : candleTime.Date;
+
+            return (profile.Value, tradingDate);
+        }
+
+        private int GetCombinedProfileGrouping()
+        {
+            int rth = GetRuntimeSettings(GetProfileFor(_selectedMarket, ProfileEditSession.RTH)).TicksGrouping;
+            int eth = GetRuntimeSettings(GetProfileFor(_selectedMarket, ProfileEditSession.ETH)).TicksGrouping;
+            return Math.Max(1, Math.Min(rth, eth));
+        }
+
         // ----------------------------------------------------
         // Constructor
         // ----------------------------------------------------
@@ -1274,14 +1549,6 @@ namespace ATAS.Indicators.Custom
             base.OnDispose();
         }
 
-        private DateTime GetSessionDate(DateTime candleTime)
-        {
-            var resetTime = new TimeSpan(SessionResetHour, SessionResetMinute, 0);
-            return candleTime.TimeOfDay >= resetTime
-                ? candleTime.Date
-                : candleTime.Date.AddDays(-1);
-        }
-
         // ----------------------------------------------------
         // OnCalculate - Entry Point for Daily CD, Imbalances, & Divergences
         // ----------------------------------------------------
@@ -1291,20 +1558,28 @@ namespace ATAS.Indicators.Custom
             if (candle == null) return;
 
             decimal currentDelta = candle.Delta;
+            var profile = ResolveProfileForCandle(candle.Time);
+            SessionRuntimeSettings? settings = profile.HasValue ? GetRuntimeSettings(profile.Value) : null;
+            var sessionKey = ResolveSessionKey(candle.Time);
 
             if (bar == 0)
             {
                 _cdDayCache.Clear();
-                _cdDayCache[bar] = currentDelta;
+                _cdDayCache[bar] = sessionKey.HasValue ? currentDelta : 0m;
                 _imbalanceLines.Clear();
                 _divergences.Clear();
             }
             else
             {
                 var prevCandle = GetCandle(bar - 1);
-                if (prevCandle == null || GetSessionDate(candle.Time) != GetSessionDate(prevCandle.Time))
+                var previousSessionKey = prevCandle == null ? null : ResolveSessionKey(prevCandle.Time);
+                if (!sessionKey.HasValue)
                 {
-                    // Reset cumulative delta at the active profile's session boundary.
+                    _cdDayCache[bar] = 0m;
+                }
+                else if (!previousSessionKey.HasValue || sessionKey.Value != previousSessionKey.Value)
+                {
+                    // Reset independently at 09:30 for RTH and 18:00 for ETH.
                     _cdDayCache[bar] = currentDelta;
                 }
                 else
@@ -1314,54 +1589,49 @@ namespace ATAS.Indicators.Custom
                 }
             }
 
-            // Perform Stacked Imbalances and mitigation checks only if enabled and within DaysLookBack limit
-            if (ShowImbalances)
+            // Generate signals only inside the resolved RTH/ETH window. Existing
+            // lines still observe touches on every subsequent bar, including the
+            // unassigned 16:00-18:00 interval.
+            if (settings != null && settings.ShowImbalances)
             {
                 var lastCandle = GetCandle(CurrentBar - 1);
                 bool withinLookback = true;
                 if (lastCandle != null)
                 {
-                    withinLookback = candle.Time >= lastCandle.Time.AddDays(-DaysLookBack);
+                    withinLookback = candle.Time >= lastCandle.Time.AddDays(-settings.DaysLookBack);
                 }
 
                 if (withinLookback)
                 {
-                    CalculateStackedImbalances(bar);
-                }
-                else
-                {
-                    // Update mitigation states for existing lines
-                    UpdateMitigations(bar);
+                    CalculateStackedImbalances(bar, settings);
                 }
             }
+
+            UpdateMitigations(bar);
 
             // Perform Delta Divergence calculations if enabled and within DivergenceDaysLookBack limit
-            if (ShowDivergence || ShowMinorDivergence)
+            if (settings != null && (settings.ShowDivergence || settings.ShowMinorDivergence))
             {
                 var lastCandle = GetCandle(CurrentBar - 1);
                 bool withinLookback = true;
                 if (lastCandle != null)
                 {
-                    withinLookback = candle.Time >= lastCandle.Time.AddDays(-DivergenceDaysLookBack);
+                    withinLookback = candle.Time >= lastCandle.Time.AddDays(-settings.DivergenceDaysLookBack);
                 }
 
                 if (withinLookback)
                 {
-                    CalculateDeltaDivergence(bar);
-                }
-
-                // Check and update invalidation states for existing divergence arrows
-                if (MarkInvalidatedDivergences)
-                {
-                    UpdateDivergenceInvalidations(bar);
+                    CalculateDeltaDivergence(bar, settings);
                 }
             }
+
+            UpdateDivergenceInvalidations(bar);
         }
 
         // ----------------------------------------------------
         // Helper: Calculate Stacked Imbalances for a specific bar
         // ----------------------------------------------------
-        private void CalculateStackedImbalances(int bar)
+        private void CalculateStackedImbalances(int bar, SessionRuntimeSettings settings)
         {
             var candle = GetCandle(bar);
             if (candle == null) return;
@@ -1370,7 +1640,7 @@ namespace ATAS.Indicators.Custom
             // Footprint display grouping must not widen the comparison distance.
             var levels = GetGroupedPriceLevels(candle, 1);
             int n = levels.Count;
-            if (n < ImbalanceRange) return;
+            if (n < settings.ImbalanceRange) return;
 
             bool[] isBuyImbalance = new bool[n];
             bool[] isSellImbalance = new bool[n];
@@ -1382,12 +1652,12 @@ namespace ATAS.Indicators.Custom
                 {
                     decimal ask = levels[i].Ask;
                     decimal diagonalBid = levels[i+1].Bid;
-                    if (ask >= ImbalanceVolume)
+                    if (ask >= settings.ImbalanceVolume)
                     {
                         if (diagonalBid > 0)
-                            isBuyImbalance[i] = ask >= diagonalBid * (ImbalanceRatio / 100.0m);
+                            isBuyImbalance[i] = ask >= diagonalBid * (settings.ImbalanceRatio / 100.0m);
                         else
-                            isBuyImbalance[i] = !IgnoreZeroValues;
+                            isBuyImbalance[i] = !settings.IgnoreZeroValues;
                     }
                 }
 
@@ -1396,21 +1666,21 @@ namespace ATAS.Indicators.Custom
                 {
                     decimal bid = levels[i].Bid;
                     decimal diagonalAsk = levels[i-1].Ask;
-                    if (bid >= ImbalanceVolume)
+                    if (bid >= settings.ImbalanceVolume)
                     {
                         if (diagonalAsk > 0)
-                            isSellImbalance[i] = bid >= diagonalAsk * (ImbalanceRatio / 100.0m);
+                            isSellImbalance[i] = bid >= diagonalAsk * (settings.ImbalanceRatio / 100.0m);
                         else
-                            isSellImbalance[i] = !IgnoreZeroValues;
+                            isSellImbalance[i] = !settings.IgnoreZeroValues;
                     }
                 }
             }
 
             // Check Buy Stacked Imbalance
-            for (int i = 0; i <= n - ImbalanceRange; i++)
+            for (int i = 0; i <= n - settings.ImbalanceRange; i++)
             {
                 bool isStacked = true;
-                for (int j = 0; j < ImbalanceRange; j++)
+                for (int j = 0; j < settings.ImbalanceRange; j++)
                 {
                     if (!isBuyImbalance[i + j])
                     {
@@ -1421,18 +1691,18 @@ namespace ATAS.Indicators.Custom
 
                 if (isStacked)
                 {
-                    for (int j = 0; j < ImbalanceRange; j++)
+                    for (int j = 0; j < settings.ImbalanceRange; j++)
                     {
-                        AddImbalanceLine(levels[i + j].Price, bar, true);
+                        AddImbalanceLine(levels[i + j].Price, bar, true, settings);
                     }
                 }
             }
 
             // Check Sell Stacked Imbalance
-            for (int i = 0; i <= n - ImbalanceRange; i++)
+            for (int i = 0; i <= n - settings.ImbalanceRange; i++)
             {
                 bool isStacked = true;
-                for (int j = 0; j < ImbalanceRange; j++)
+                for (int j = 0; j < settings.ImbalanceRange; j++)
                 {
                     if (!isSellImbalance[i + j])
                     {
@@ -1443,18 +1713,16 @@ namespace ATAS.Indicators.Custom
 
                 if (isStacked)
                 {
-                    for (int j = 0; j < ImbalanceRange; j++)
+                    for (int j = 0; j < settings.ImbalanceRange; j++)
                     {
-                        AddImbalanceLine(levels[i + j].Price, bar, false);
+                        AddImbalanceLine(levels[i + j].Price, bar, false, settings);
                     }
                 }
             }
 
-            // Update mitigation states
-            UpdateMitigations(bar);
         }
 
-        private void AddImbalanceLine(decimal price, int bar, bool isBuy)
+        private void AddImbalanceLine(decimal price, int bar, bool isBuy, SessionRuntimeSettings settings)
         {
             if (_imbalanceLines.Any(l => l.StartBar == bar && l.Price == price && l.IsBuy == isBuy))
                 return;
@@ -1465,7 +1733,9 @@ namespace ATAS.Indicators.Custom
                 StartBar = bar,
                 IsBuy = isBuy,
                 IsMitigated = false,
-                MitigatedBar = -1
+                MitigatedBar = -1,
+                ExtendTillTouch = settings.LineTillTouch,
+                MaximumLineBars = settings.PrintLineForXBars
             });
         }
 
@@ -1501,7 +1771,7 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         // Helper: Calculate Delta Divergence for a specific bar
         // ----------------------------------------------------
-        private void CalculateDeltaDivergence(int bar)
+        private void CalculateDeltaDivergence(int bar, SessionRuntimeSettings settings)
         {
             var candle = GetCandle(bar);
             if (candle == null) return;
@@ -1518,7 +1788,7 @@ namespace ATAS.Indicators.Custom
             if (!isBullishCond && !isBearishCond) return;
 
             // 1. Check Major Divergence
-            if (ShowDivergence && deltaPct >= DeltaPercentageThreshold)
+            if (settings.ShowDivergence && deltaPct >= settings.DeltaPercentageThreshold)
             {
                 _divergences.Add(new DivergencePoint
                 {
@@ -1527,11 +1797,13 @@ namespace ATAS.Indicators.Custom
                     Price = isBullishCond ? candle.Low : candle.High,
                     IsMajor = true,
                     IsInvalidated = false,
-                    InvalidatedBar = -1
+                    InvalidatedBar = -1,
+                    MarkInvalidated = settings.MarkInvalidatedDivergences,
+                    InvalidationLookbackBars = settings.InvalidationLookbackBars
                 });
             }
             // 2. Check Minor Divergence (Only if Major did not trigger or is disabled)
-            else if (ShowMinorDivergence && deltaPct >= MinorDeltaPercentageThreshold)
+            else if (settings.ShowMinorDivergence && deltaPct >= settings.MinorDeltaPercentageThreshold)
             {
                 _divergences.Add(new DivergencePoint
                 {
@@ -1540,7 +1812,9 @@ namespace ATAS.Indicators.Custom
                     Price = isBullishCond ? candle.Low : candle.High,
                     IsMajor = false,
                     IsInvalidated = false,
-                    InvalidatedBar = -1
+                    InvalidatedBar = -1,
+                    MarkInvalidated = settings.MarkInvalidatedDivergences,
+                    InvalidationLookbackBars = settings.InvalidationLookbackBars
                 });
             }
         }
@@ -1556,10 +1830,11 @@ namespace ATAS.Indicators.Custom
             foreach (var div in _divergences)
             {
                 if (div.IsInvalidated) continue;
+                if (!div.MarkInvalidated) continue;
                 
                 int barDiff = bar - div.Bar;
                 // Only check within the immediate window (1 to InvalidationLookbackBars candles, default 2)
-                if (barDiff >= 1 && barDiff <= InvalidationLookbackBars)
+                if (barDiff >= 1 && barDiff <= div.InvalidationLookbackBars)
                 {
                     var signalCandle = GetCandle(div.Bar);
                     if (signalCandle == null) continue;
@@ -1608,13 +1883,17 @@ namespace ATAS.Indicators.Custom
             var profileData = new Dictionary<decimal, (decimal Volume, decimal Delta)>();
             if (ShowRightProfile)
             {
+                int combinedProfileGrouping = GetCombinedProfileGrouping();
                 for (int bar = FirstVisibleBarNumber; bar <= LastVisibleBarNumber; bar++)
                 {
                     if (bar < 0 || bar >= CurrentBar) continue;
                     var candle = GetCandle(bar);
                     if (candle == null) continue;
+                    if (!ResolveProfileForCandle(candle.Time).HasValue) continue;
 
-                    var candleLevels = GetGroupedPriceLevels(candle);
+                    // A single right-side profile needs one consistent price grid.
+                    // Use the finer grouping of the selected market's two sessions.
+                    var candleLevels = GetGroupedPriceLevels(candle, combinedProfileGrouping);
                     foreach (var level in candleLevels)
                     {
                         if (!profileData.TryGetValue(level.Price, out var data))
@@ -1641,7 +1920,7 @@ namespace ATAS.Indicators.Custom
                     if (maxProfileVol <= 0) maxProfileVol = 1;
                 }
 
-                decimal groupSize = this.InstrumentInfo.TickSize * TicksGrouping;
+                decimal groupSize = this.InstrumentInfo.TickSize * combinedProfileGrouping;
 
                 // Render Profile Bars
                 foreach (var entry in profileData)
@@ -1693,11 +1972,16 @@ namespace ATAS.Indicators.Custom
                 var candle = GetCandle(bar);
                 if (candle == null) continue;
 
+                var runtimeProfile = ResolveProfileForCandle(candle.Time);
+                SessionRuntimeSettings? runtimeSettings = runtimeProfile.HasValue
+                    ? GetRuntimeSettings(runtimeProfile.Value)
+                    : null;
+
                 int x = ChartInfo.GetXByBar(bar, true);
 
-                if (drawFootprintDetails)
+                if (drawFootprintDetails && runtimeSettings != null)
                 {
-                    var priceLevels = GetGroupedPriceLevels(candle);
+                    var priceLevels = GetGroupedPriceLevels(candle, runtimeSettings.TicksGrouping);
                     if (priceLevels.Count > 0)
                     {
                         // Find POC level of the candle (only search levels with non-zero volume)
@@ -1712,7 +1996,7 @@ namespace ATAS.Indicators.Custom
                             }
                         }
 
-                        decimal groupSize = this.InstrumentInfo.TickSize * TicksGrouping;
+                        decimal groupSize = this.InstrumentInfo.TickSize * runtimeSettings.TicksGrouping;
 
                         // Draw each price level
                         foreach (var level in priceLevels)
@@ -1739,12 +2023,12 @@ namespace ATAS.Indicators.Custom
                             Color leftBgColor = DefaultBgColor;
                             Color volTextColor = VolumeTextColor;
 
-                            if (level.Volume >= OrangeThreshold)
+                            if (level.Volume >= runtimeSettings.OrangeThreshold)
                             {
                                 leftBgColor = OrangeColor;
                                 volTextColor = VolumeHighlightedTextColor;
                             }
-                            else if (level.Volume >= PurpleThreshold)
+                            else if (level.Volume >= runtimeSettings.PurpleThreshold)
                             {
                                 leftBgColor = PurpleColor;
                                 volTextColor = VolumeHighlightedTextColor;
@@ -1842,12 +2126,12 @@ namespace ATAS.Indicators.Custom
             }
 
             // 4. Render Stacked Imbalance Lines (Only if enabled)
-            if (ShowImbalances)
+            if (_imbalanceLines.Count > 0)
             {
                 foreach (var line in _imbalanceLines)
                 {
                     // Legacy behavior: once touched, remove the level entirely.
-                    if (LineTillTouch && line.IsMitigated)
+                    if (line.ExtendTillTouch && line.IsMitigated)
                         continue;
 
                     int endBar = CurrentBar - 1;
@@ -1856,9 +2140,9 @@ namespace ATAS.Indicators.Custom
                         endBar = line.MitigatedBar;
                     }
 
-                    if (!LineTillTouch)
+                    if (!line.ExtendTillTouch)
                     {
-                        int maxEnd = line.StartBar + PrintLineForXBars;
+                        int maxEnd = line.StartBar + line.MaximumLineBars;
                         if (line.IsMitigated)
                             endBar = Math.Min(maxEnd, line.MitigatedBar);
                         else
@@ -1895,7 +2179,7 @@ namespace ATAS.Indicators.Custom
             }
 
             // 5. Render Delta Divergence Arrows (Only if enabled)
-            if (ShowDivergence || ShowMinorDivergence)
+            if (_divergences.Count > 0)
             {
                 // Take only visible divergences up to MaxDivergenceArrows, starting from the most recent
                 var visibleDivergences = _divergences
@@ -1915,7 +2199,7 @@ namespace ATAS.Indicators.Custom
                     string arrowStr = div.IsBullish ? "▲" : "▼";
                     
                     Color arrowColor;
-                    if (div.IsInvalidated && MarkInvalidatedDivergences)
+                    if (div.IsInvalidated && div.MarkInvalidated)
                     {
                         arrowColor = InvalidatedArrowColor;
                     }
@@ -2268,6 +2552,7 @@ namespace ATAS.Indicators.Custom
                 };
 
                 File.WriteAllLines(filepath, lines);
+                _runtimeSettingsCache[profile] = CaptureRuntimeSettings();
             }
             catch
             {
@@ -2400,10 +2685,12 @@ namespace ATAS.Indicators.Custom
                 if (_minorDeltaPercentageThreshold > _deltaPercentageThreshold) _minorDeltaPercentageThreshold = _deltaPercentageThreshold;
 
                 _isApplyingProfile = false;
+                _runtimeSettingsCache[profile] = CaptureRuntimeSettings();
             }
             catch
             {
                 _isApplyingProfile = false;
+                _runtimeSettingsCache.Remove(profile);
             }
         }
     }

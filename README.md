@@ -52,8 +52,10 @@ Chỉ báo Custom Footprint cao cấp dành cho nền tảng giao dịch **ATAS 
    - **Custom:** Tự do tùy biến từng mã màu.
 
 10. **Hệ Thống Quản Lý Profiles Đa Năng:**
-    - Nhóm `01. QUICK SETUP` chỉ giữ 3 dòng cần thiết: chọn Market/Session, xem giờ phiên và xem trạng thái validation.
-    - `1) Profile` dùng dropdown enum native của ATAS: chỉ có thể chọn, không thể nhập text. Dropdown chỉ hiển thị đúng 4 preset cố định để không thể nhầm instrument hoặc session:
+    - `1) Market` chỉ chọn `NQ` hoặc `ES`. Indicator tự áp dụng đồng thời hai profile của market đã chọn theo thời gian từng candle: RTH `09:30-16:00 ET`, ETH `18:00-09:30 ET`.
+    - `2) Edit Session` chọn profile RTH hoặc ETH đang hiển thị trong settings panel để tinh chỉnh; profile còn lại vẫn tiếp tục được áp dụng tự động trên chart.
+    - Các bar `16:00-18:00 ET` không được gán profile footprint. Right Profile dùng grouping nhỏ hơn của cặp RTH/ETH để giữ một price grid nhất quán khi tổng hợp cả hai phiên.
+    - Hai dropdown dùng enum native của ATAS: chỉ có thể chọn, không thể nhập text. Bốn preset nền vẫn được lưu độc lập:
 
       | Profile | Ticks grouping | Volume tím / cam | Imbalance (ratio / range / min vol) | Delta major / minor |
       |---|---:|---:|---:|---:|
@@ -63,11 +65,11 @@ Chỉ báo Custom Footprint cao cấp dành cho nền tảng giao dịch **ATAS 
       | ES \| ETH \| 18:00-09:30 ET | 4 | 100 / 200 | 300% / 3 / 12 | 10% / 2.5% |
 
     - Các khung giờ trên dùng múi giờ **US Eastern (ET)**; hãy chọn chart/session template tương ứng trong ATAS.
-    - `CD Day` reset theo đầu phiên của profile (09:30 ET cho RTH, 18:00 ET cho ETH), thay vì reset cứng lúc 00:00.
+    - `CD Day` tự reset hai lần theo session đang chạy: 09:30 ET cho RTH và 18:00 ET cho ETH.
     - Tên 4 preset được khóa cố định; không còn ô rename gây mất dấu instrument/session.
     - `Validation Status` ghi rõ `USER-TUNED BASELINE` cho NQ RTH và `RECOMMENDED BASELINE` cho ba preset chưa được backtest đầy đủ.
     - Lưu trữ vĩnh viễn cấu hình vào file `.cfg` trên máy.
-    - Giờ reset CD được chuyển xuống `10. ADVANCED SESSION` để Quick Setup luôn gọn.
+    - Các property profile dạng text và giờ reset thủ công cũ được ẩn để tránh xung đột với Auto Session; workspace cũ vẫn được migrate.
 
 ## Cơ sở hiệu chỉnh và giới hạn
 
