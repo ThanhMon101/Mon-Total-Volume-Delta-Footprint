@@ -56,7 +56,7 @@ Chỉ báo Custom Footprint cao cấp dành cho nền tảng giao dịch **ATAS 
     - `2) Edit Session` chọn profile RTH hoặc ETH đang hiển thị trong settings panel để tinh chỉnh; profile còn lại vẫn tiếp tục được áp dụng tự động trên chart.
     - Layout/visibility/style là cấu hình dùng chung của chart và luôn được giữ nguyên khi đổi Market hoặc Edit Session. Các lựa chọn user đã chỉnh như `Show Candle In Middle`, `Show Right Profile`, `Show Bottom Stats`, font, màu sắc và kích thước không còn bị preset đích ghi đè bằng mặc định.
     - Các tham số định lượng vẫn độc lập theo từng session: Ticks Grouping, volume tím/cam, Stacked Imbalance, Delta Major/Minor, Line Till Touch và các giới hạn tính toán liên quan.
-    - Các bar `16:00-18:00 ET` không được gán profile footprint. Right Profile dùng grouping nhỏ hơn của cặp RTH/ETH để giữ một price grid nhất quán khi tổng hợp cả hai phiên.
+    - Không còn khoảng trống profile: RTH áp dụng `09:30-16:00 ET`; mọi candle còn lại dùng bộ ETH, gồm cả đoạn chuyển tiếp `16:00-18:00 ET`. Nhờ vậy `CD Day` không bị ép về 0 và signal không bị tắt. `CD Day` vẫn reset tại `09:30` và `18:00`; Right Profile dùng grouping nhỏ hơn của cặp RTH/ETH để giữ một price grid nhất quán.
     - Hai dropdown dùng enum native của ATAS: chỉ có thể chọn, không thể nhập text. Bốn preset nền vẫn được lưu độc lập:
 
       | Profile | Ticks grouping | Volume tím / cam | Imbalance (ratio / range / min vol) | Delta major / minor |

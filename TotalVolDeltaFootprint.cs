@@ -550,8 +550,8 @@ namespace ATAS.Indicators.Custom
 
         [ReadOnly(true)]
         [Display(Name = "3) Auto Application", GroupName = QuickSetupGroup, Order = 2,
-            Description = "Bars outside 09:30-16:00 and 18:00-09:30 are not assigned a footprint profile. Keep chart time in US Eastern.")]
-        public string ActivePresetScope => $"{_selectedMarket} | RTH 09:30-16:00 + ETH 18:00-09:30 ET | AUTO";
+            Description = "RTH is applied from 09:30-16:00. ETH is applied to every other candle, including the 16:00-18:00 transition, so CD Day and signals never enter an unassigned gap. Keep chart time in US Eastern.")]
+        public string ActivePresetScope => $"{_selectedMarket} | RTH 09:30-16:00 + ETH ALL OTHER BARS ET | AUTO / NO GAP";
 
         [ReadOnly(true)]
         [Display(Name = "4) Editing Now", GroupName = QuickSetupGroup, Order = 3,
@@ -1490,28 +1490,34 @@ namespace ATAS.Indicators.Custom
             var time = candleTime.TimeOfDay;
             var rthStart = new TimeSpan(9, 30, 0);
             var rthEnd = new TimeSpan(16, 0, 0);
-            var ethStart = new TimeSpan(18, 0, 0);
 
             if (time >= rthStart && time < rthEnd)
                 return GetProfileFor(_selectedMarket, ProfileEditSession.RTH);
 
-            if (time >= ethStart || time < rthStart)
-                return GetProfileFor(_selectedMarket, ProfileEditSession.ETH);
-
-            return null;
+            // Use the ETH thresholds for every non-RTH candle. This intentionally
+            // includes 16:00-18:00 so a chart can never enter a null-profile gap
+            // that forces CD Day to zero and disables signal generation.
+            return GetProfileFor(_selectedMarket, ProfileEditSession.ETH);
         }
 
         private (IndicatorProfile Profile, DateTime TradingDate)? ResolveSessionKey(DateTime candleTime)
         {
-            var profile = ResolveProfileForCandle(candleTime);
-            if (!profile.HasValue)
-                return null;
+            var time = candleTime.TimeOfDay;
+            var rthCdStart = new TimeSpan(9, 30, 0);
+            var ethCdStart = new TimeSpan(18, 0, 0);
 
-            DateTime tradingDate = GetEditSessionForProfile(profile.Value) == ProfileEditSession.ETH && candleTime.TimeOfDay < new TimeSpan(9, 30, 0)
+            // CD Day keeps its established reset anchors at 09:30 and 18:00.
+            // The 16:00-18:00 transition continues the RTH cumulative delta,
+            // while its footprint signals already use the ETH thresholds.
+            var profile = time >= rthCdStart && time < ethCdStart
+                ? GetProfileFor(_selectedMarket, ProfileEditSession.RTH)
+                : GetProfileFor(_selectedMarket, ProfileEditSession.ETH);
+
+            DateTime tradingDate = GetEditSessionForProfile(profile) == ProfileEditSession.ETH && time < rthCdStart
                 ? candleTime.Date.AddDays(-1)
                 : candleTime.Date;
 
-            return (profile.Value, tradingDate);
+            return (profile, tradingDate);
         }
 
         private int GetCombinedProfileGrouping()
@@ -1600,9 +1606,8 @@ namespace ATAS.Indicators.Custom
                 }
             }
 
-            // Generate signals only inside the resolved RTH/ETH window. Existing
-            // lines still observe touches on every subsequent bar, including the
-            // unassigned 16:00-18:00 interval.
+            // Every candle resolves to RTH or ETH, so signal generation remains
+            // active through the former 16:00-18:00 unassigned interval.
             if (settings != null && settings.ShowImbalances)
             {
                 var lastCandle = GetCandle(CurrentBar - 1);
