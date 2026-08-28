@@ -52,22 +52,23 @@ Chỉ báo Custom Footprint cao cấp dành cho nền tảng giao dịch **ATAS 
    - **Custom:** Tự do tùy biến từng mã màu.
 
 10. **Hệ Thống Quản Lý Profiles Đa Năng:**
-    - `1) Market` chỉ chọn `NQ` hoặc `ES`. Indicator tự áp dụng đồng thời hai profile của market đã chọn theo thời gian từng candle: RTH `09:30-16:00 ET`, ETH `18:00-09:30 ET`.
+    - `1) Market` chỉ chọn `NQ` hoặc `ES`. Indicator tự áp dụng đồng thời hai profile theo giờ instrument đang cấu hình trong ATAS: RTH `09:30-16:00`, ETH `18:00-09:30`.
     - `2) Edit Session` chọn profile RTH hoặc ETH đang hiển thị trong settings panel để tinh chỉnh; profile còn lại vẫn tiếp tục được áp dụng tự động trên chart.
     - Layout/visibility/style là cấu hình dùng chung của chart và luôn được giữ nguyên khi đổi Market hoặc Edit Session. Các lựa chọn user đã chỉnh như `Show Candle In Middle`, `Show Right Profile`, `Show Bottom Stats`, font, màu sắc và kích thước không còn bị preset đích ghi đè bằng mặc định.
     - Các tham số định lượng vẫn độc lập theo từng session: Ticks Grouping, volume tím/cam, Stacked Imbalance, Delta Major/Minor, Line Till Touch và các giới hạn tính toán liên quan.
-    - Không còn khoảng trống profile: RTH áp dụng `09:30-16:00 ET`; mọi candle còn lại dùng bộ ETH, gồm cả đoạn chuyển tiếp `16:00-18:00 ET`. Nhờ vậy `CD Day` không bị ép về 0 và signal không bị tắt. `CD Day` vẫn reset tại `09:30` và `18:00`; Right Profile dùng grouping nhỏ hơn của cặp RTH/ETH để giữ một price grid nhất quán.
+    - Session clock đọc động `InstrumentInfo.TimeZone` của symbol/exchange mà indicator đang gắn vào, giống cách indicator chuẩn của ATAS xử lý custom session. Ví dụ candle server `16:00` với instrument `UTC-4` được xét là `12:00`, nên vẫn thuộc RTH. Khi đổi timezone trong ATAS và Update chart, indicator tự tính lại theo offset mới; Quick Setup hiển thị offset đang nhận ở dòng `Session Clock`.
+    - Không còn khoảng trống profile: RTH áp dụng `09:30-16:00` theo ATAS instrument time; mọi candle còn lại dùng bộ ETH, gồm cả đoạn chuyển tiếp `16:00-18:00`. Nhờ vậy `CD Day` không bị ép về 0 và signal không bị tắt. `CD Day` vẫn reset tại `09:30` và `18:00`; Right Profile dùng grouping nhỏ hơn của cặp RTH/ETH để giữ một price grid nhất quán.
     - Hai dropdown dùng enum native của ATAS: chỉ có thể chọn, không thể nhập text. Bốn preset nền vẫn được lưu độc lập:
 
       | Profile | Ticks grouping | Volume tím / cam | Imbalance (ratio / range / min vol) | Delta major / minor |
       |---|---:|---:|---:|---:|
-      | NQ \| RTH \| 09:30-16:00 ET | 12 | 150 / 300 | 280% / 2 / 20 | 10% / 2% |
-      | NQ \| ETH \| 18:00-09:30 ET | 8 | 60 / 120 | 300% / 3 / 8 | 12% / 3% |
-      | ES \| RTH \| 09:30-16:00 ET | 4 | 300 / 600 | 300% / 3 / 40 | 8% / 2% |
-      | ES \| ETH \| 18:00-09:30 ET | 4 | 100 / 200 | 300% / 3 / 12 | 10% / 2.5% |
+      | NQ \| RTH \| 09:30-16:00 ATAS TZ | 12 | 150 / 300 | 280% / 2 / 20 | 10% / 2% |
+      | NQ \| ETH \| 18:00-09:30 ATAS TZ | 8 | 60 / 120 | 300% / 3 / 8 | 12% / 3% |
+      | ES \| RTH \| 09:30-16:00 ATAS TZ | 4 | 300 / 600 | 300% / 3 / 40 | 8% / 2% |
+      | ES \| ETH \| 18:00-09:30 ATAS TZ | 4 | 100 / 200 | 300% / 3 / 12 | 10% / 2.5% |
 
-    - Các khung giờ trên dùng múi giờ **US Eastern (ET)**; hãy chọn chart/session template tương ứng trong ATAS.
-    - `CD Day` tự reset hai lần theo session đang chạy: 09:30 ET cho RTH và 18:00 ET cho ETH.
+    - Các khung giờ trên dùng timezone hiện tại của instrument trong ATAS, không còn giả định cứng candle timestamp đã là US Eastern. Với NQ/ES, đặt instrument theo US Eastern nếu muốn các nhãn `09:30`, `16:00`, `18:00` khớp trực tiếp giờ New York.
+    - `CD Day` tự reset hai lần theo ATAS instrument time: 09:30 cho RTH và 18:00 cho ETH.
     - Tên 4 preset được khóa cố định; không còn ô rename gây mất dấu instrument/session.
     - `Validation Status` ghi rõ `USER-TUNED BASELINE` cho NQ RTH và `RECOMMENDED BASELINE` cho ba preset chưa được backtest đầy đủ.
     - Lưu trữ vĩnh viễn cấu hình vào file `.cfg` trên máy.

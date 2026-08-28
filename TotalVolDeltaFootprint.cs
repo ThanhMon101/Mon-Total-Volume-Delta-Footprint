@@ -77,10 +77,10 @@ namespace ATAS.Indicators.Custom
         {
             return profile switch
             {
-                IndicatorProfile.Default => "NQ | RTH | 09:30-16:00 ET",
-                IndicatorProfile.Profile1 => "NQ | ETH | 18:00-09:30 ET",
-                IndicatorProfile.Profile2 => "ES | RTH | 09:30-16:00 ET",
-                IndicatorProfile.Profile3 => "ES | ETH | 18:00-09:30 ET",
+                IndicatorProfile.Default => "NQ | RTH | 09:30-16:00 ATAS TZ",
+                IndicatorProfile.Profile1 => "NQ | ETH | 18:00-09:30 ATAS TZ",
+                IndicatorProfile.Profile2 => "ES | RTH | 09:30-16:00 ATAS TZ",
+                IndicatorProfile.Profile3 => "ES | ETH | 18:00-09:30 ATAS TZ",
                 IndicatorProfile.Profile4 => "Custom 1",
                 IndicatorProfile.Profile5 => "Custom 2",
                 _ => profile.ToString()
@@ -91,10 +91,10 @@ namespace ATAS.Indicators.Custom
         {
             return profile switch
             {
-                IndicatorProfile.Default => "NQ | Regular session | 09:30-16:00 US Eastern",
-                IndicatorProfile.Profile1 => "NQ | ETH | 18:00-09:30 US Eastern",
-                IndicatorProfile.Profile2 => "ES | Regular session | 09:30-16:00 US Eastern",
-                IndicatorProfile.Profile3 => "ES | ETH | 18:00-09:30 US Eastern",
+                IndicatorProfile.Default => "NQ | Regular session | 09:30-16:00 ATAS instrument time",
+                IndicatorProfile.Profile1 => "NQ | ETH | 18:00-09:30 ATAS instrument time",
+                IndicatorProfile.Profile2 => "ES | Regular session | 09:30-16:00 ATAS instrument time",
+                IndicatorProfile.Profile3 => "ES | ETH | 18:00-09:30 ATAS instrument time",
                 _ => "User-defined profile"
             };
         }
@@ -279,8 +279,9 @@ namespace ATAS.Indicators.Custom
         private TradingMarket _selectedMarket = TradingMarket.NQ;
         private ProfileEditSession _profileEditSession = ProfileEditSession.RTH;
         private const string AppearanceOwnerFileName = "TotalVolDeltaFootprint_AppearanceOwner.cfg";
+        private int _lastObservedInstrumentTimeZone = int.MinValue;
         private ColorThemeMode _colorTheme = ColorThemeMode.DarkMode;
-        private string _profileLabel = "NQ | RTH | 09:30-16:00 ET";
+        private string _profileLabel = "NQ | RTH | 09:30-16:00 ATAS TZ";
         private bool _isApplyingProfile = false;
         private int _sessionResetHour = 9;
         private int _sessionResetMinute = 30;
@@ -501,6 +502,7 @@ namespace ATAS.Indicators.Custom
             OnPropertyChanged(nameof(QuickMarket));
             OnPropertyChanged(nameof(ProfileToEdit));
             OnPropertyChanged(nameof(ActivePresetScope));
+            OnPropertyChanged(nameof(ActiveSessionClock));
             OnPropertyChanged(nameof(EditingProfileSummary));
             OnPropertyChanged(nameof(ActiveCalibrationStatus));
             OnPropertyChanged(nameof(QuickProfile));
@@ -550,16 +552,21 @@ namespace ATAS.Indicators.Custom
 
         [ReadOnly(true)]
         [Display(Name = "3) Auto Application", GroupName = QuickSetupGroup, Order = 2,
-            Description = "RTH is applied from 09:30-16:00. ETH is applied to every other candle, including the 16:00-18:00 transition, so CD Day and signals never enter an unassigned gap. Keep chart time in US Eastern.")]
-        public string ActivePresetScope => $"{_selectedMarket} | RTH 09:30-16:00 + ETH ALL OTHER BARS ET | AUTO / NO GAP";
+            Description = "RTH is applied from 09:30-16:00 in the current ATAS instrument timezone. ETH is applied to every other candle, including the 16:00-18:00 transition, so CD Day and signals never enter an unassigned gap.")]
+        public string ActivePresetScope => $"{_selectedMarket} | RTH 09:30-16:00 + ETH ALL OTHER BARS | AUTO / NO GAP";
 
         [ReadOnly(true)]
-        [Display(Name = "4) Editing Now", GroupName = QuickSetupGroup, Order = 3,
+        [Display(Name = "4) Session Clock", GroupName = QuickSetupGroup, Order = 3,
+            Description = "Live timezone offset read from the instrument that this indicator is attached to. Change the symbol/exchange timezone in ATAS, then update the chart, and the session clock follows it automatically.")]
+        public string ActiveSessionClock => $"ATAS INSTRUMENT TIME | {FormatUtcOffset(GetInstrumentTimeZoneHours())} | SYNCED";
+
+        [ReadOnly(true)]
+        [Display(Name = "5) Editing Now", GroupName = QuickSetupGroup, Order = 4,
             Description = "Only identifies which settings are being edited; both profiles remain active automatically.")]
         public string EditingProfileSummary => GetProfileScope(_activeProfile);
 
         [ReadOnly(true)]
-        [Display(Name = "5) Validation Status", GroupName = QuickSetupGroup, Order = 4,
+        [Display(Name = "6) Validation Status", GroupName = QuickSetupGroup, Order = 5,
             Description = "USER-TUNED means the current NQ RTH baseline is retained. RECOMMENDED BASELINE means paper-test and walk-forward validation are still required.")]
         public string ActiveCalibrationStatus => GetCalibrationStatus(_activeProfile);
 
@@ -1485,9 +1492,61 @@ namespace ATAS.Indicators.Custom
             }
         }
 
+        private int GetInstrumentTimeZoneHours()
+        {
+            try
+            {
+                return InstrumentInfo?.TimeZone ?? 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private static string FormatUtcOffset(int offsetHours)
+        {
+            if (offsetHours == 0)
+                return "UTC+0";
+
+            return offsetHours > 0 ? $"UTC+{offsetHours}" : $"UTC{offsetHours}";
+        }
+
+        private DateTime GetInstrumentSessionTime(DateTime candleTime)
+        {
+            // ATAS stores candle timestamps in its base/server clock. The
+            // instrument offset is the user-configured chart timezone and can
+            // change by symbol/exchange, so always read it dynamically.
+            return candleTime.AddHours(GetInstrumentTimeZoneHours());
+        }
+
+        private bool RefreshInstrumentTimeZoneStatus(int bar)
+        {
+            int currentTimeZone = GetInstrumentTimeZoneHours();
+            if (_lastObservedInstrumentTimeZone == currentTimeZone)
+                return false;
+
+            bool requiresFullRecalculation = _lastObservedInstrumentTimeZone != int.MinValue && bar > 0;
+            _lastObservedInstrumentTimeZone = currentTimeZone;
+            OnPropertyChanged(nameof(ActiveSessionClock));
+            OnPropertyChanged(nameof(ActivePresetScope));
+
+            // ATAS normally recalculates when the chart is updated after a
+            // timezone change. If the offset changes during a live calculation,
+            // force one full pass so historical CD/session caches cannot retain
+            // the previous instrument clock.
+            if (requiresFullRecalculation)
+            {
+                RecalculateValues();
+                return true;
+            }
+
+            return false;
+        }
+
         private IndicatorProfile? ResolveProfileForCandle(DateTime candleTime)
         {
-            var time = candleTime.TimeOfDay;
+            var time = GetInstrumentSessionTime(candleTime).TimeOfDay;
             var rthStart = new TimeSpan(9, 30, 0);
             var rthEnd = new TimeSpan(16, 0, 0);
 
@@ -1502,7 +1561,8 @@ namespace ATAS.Indicators.Custom
 
         private (IndicatorProfile Profile, DateTime TradingDate)? ResolveSessionKey(DateTime candleTime)
         {
-            var time = candleTime.TimeOfDay;
+            var sessionTime = GetInstrumentSessionTime(candleTime);
+            var time = sessionTime.TimeOfDay;
             var rthCdStart = new TimeSpan(9, 30, 0);
             var ethCdStart = new TimeSpan(18, 0, 0);
 
@@ -1514,8 +1574,8 @@ namespace ATAS.Indicators.Custom
                 : GetProfileFor(_selectedMarket, ProfileEditSession.ETH);
 
             DateTime tradingDate = GetEditSessionForProfile(profile) == ProfileEditSession.ETH && time < rthCdStart
-                ? candleTime.Date.AddDays(-1)
-                : candleTime.Date;
+                ? sessionTime.Date.AddDays(-1)
+                : sessionTime.Date;
 
             return (profile, tradingDate);
         }
@@ -1571,6 +1631,9 @@ namespace ATAS.Indicators.Custom
         // ----------------------------------------------------
         protected override void OnCalculate(int bar, decimal value)
         {
+            if (RefreshInstrumentTimeZoneStatus(bar))
+                return;
+
             var candle = GetCandle(bar);
             if (candle == null) return;
 
